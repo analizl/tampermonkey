@@ -6,6 +6,7 @@
 // @author       Diagnosis
 // @match        *://*.pami.org.ar/*
 // @match        http://localhost:3000/informes/descarga*
+// @match        https://dweb.diagnosis.com.ar/informes/descarga*
 // @grant        window.focus
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -18,7 +19,7 @@
 (function() {
     'use strict';
 
-    const URL_LOCAL = "http://localhost:3000/informes/descarga";
+    const URL_LOCAL = "https://dweb.diagnosis.com.ar/informes/descarga";
     const URL_PAMI = "https://pe.pami.org.ar/controllers/transmision.php";
 
     const urlActual = window.location.href;
@@ -78,10 +79,10 @@
         }
 
         window.addEventListener('load', () => setTimeout(InyectarBotonesPAMI, 2000));
-        
+
         function procesarSubidaArchivo(orden) {
             if (!orden) return;
-            
+
             const filaObjetivo = document.querySelector(`tr[data-n-orden="${orden}"]`);
             const inputFile = document.querySelector("input#m_doc");
 
@@ -122,7 +123,7 @@
 
                         if (botonCargar) {
                             GM_setValue('pami_orden_en_modal', newValue.orden);
-                            
+
                             botonCargar.click();
 
                             let intentosModal = 0;
@@ -143,7 +144,7 @@
                                         selectDoc.value = valorReal17;
                                         selectDoc.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
                                         selectDoc.dispatchEvent(new Event('input', { bubbles: true }));
-                                        
+
                                         const jq = typeof unsafeWindow !== 'undefined' && unsafeWindow.jQuery ? unsafeWindow.jQuery : (typeof jQuery !== 'undefined' ? jQuery : null);
                                         if (jq) {
                                             const $select = jq(selectDoc);
@@ -156,7 +157,7 @@
                                     const rafagaInsistencia = setInterval(() => {
                                         ejecucionesRafaga++;
                                         forzarSeleccionOpcion();
-                                        
+
                                         if (ejecucionesRafaga >= 15) {
                                             clearInterval(rafagaInsistencia);
                                             console.log("[PAMI] Ráfaga de seguridad finalizada.");
@@ -171,7 +172,7 @@
                                     navigator.clipboard.writeText(nombreArchivoABuscar)
                                         .then(() => console.log(`📋 Nombre copiado: ${nombreArchivoABuscar}`))
                                         .catch(err => console.error("Error al copiar:", err));
-                                    
+
                                     GM_setValue('abrir_modal_pami', null); // Limpiamos la señal de apertura de inmediato
                                 }
 
@@ -201,7 +202,7 @@
     // ==========================================
     // PARTE 2: CÓDIGO PARA D+Web
     // ==========================================
-    if (urlActual.includes("localhost:3000/informes/descarga")) {
+    if (urlActual.includes("dweb.diagnosis.com.ar/informes/descarga")) {
         GM_addValueChangeListener('enfocar_localhost', function(key, oldValue, newValue, remote) {
             if (remote && newValue === true) {
                 window.focus();
