@@ -1,0 +1,123 @@
+// ==UserScript==
+// @name         diagnosuap
+// @namespace    https://www.diagnosis.com.ar
+// @downloadURL  http://app.diagnosis.com.ar/diagnosuap.user.js
+// @version      0.8
+// @description  try to take over the world, following Magali secret plan :D
+// @author       You
+// @match        https://cblp.suap.com.ar/prestador.php/orden/*
+// @icon         https://www.google.com/s2/favicons?domain=suap.com.ar
+// @grant       GM_xmlhttpRequest
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @grant       GM_addStyle
+// @grant       GM_getResourceText
+// @grant       GM_log
+// ==/UserScript==
+
+(function() {
+    'use strict';
+    if (!unsafeWindow.XMLHttpRequest.prototype.getResponseText) {
+        unsafeWindow.XMLHttpRequest.prototype.getResponseText = Object.getOwnPropertyDescriptor(unsafeWindow.XMLHttpRequest.prototype, 'responseText').get;
+    }
+    function otroCodigo() {
+        $('#smartPractica').val(valores[voyvalor]);
+        $('#buscarPractica').click();
+        voyvalor++;
+    }
+    Object.defineProperty(unsafeWindow.XMLHttpRequest.prototype, 'responseText', {
+        get: exportFunction(function() {
+            var responseText = unsafeWindow.XMLHttpRequest.prototype.getResponseText.call(this);
+            if (valores.length && voyvalor<valores.length && responseText.length && responseText.indexOf('"nbu"')) {
+                var test = JSON.parse(responseText);
+                if (test && test[0] && typeof test[0].nbu !== 'undefined') {
+                    var valor = valores[voyvalor-1]+"";
+                    var largo = valor.length;
+                    var codificado = "66" + (Array(largo + 1)).join('0') + valor.slice(-largo);
+                    if (test[0].nbu == codificado || test[0].nbu.slice(-largo)==valores[voyvalor-1]) {
+                        window.setTimeout(otroCodigo, 500);
+                    }
+                }
+             }
+            return responseText;
+        }, unsafeWindow),
+        enumerable: true,
+        configurable: true
+    });
+    function revisoTabla(nodo) {
+        GM_log(nodo);
+    }
+    var localiza="https://app.diagnosis.com.ar/public/";
+    var tdboton=document.getElementById('buscarPractica').parentNode;
+    var miboton = document.createElement('button');
+    miboton.id="buscarDiagnosis";
+    var valores=[];
+    var voyvalor=0;
+    miboton.onclick = function () {
+        var hay = document.getElementsByClassName('smartAfiliadoDivItem f3');
+        var fecha = document.getElementById('orden_fechaRealizacion').value;
+        if (hay && hay.length) {
+            var documento = hay[0].childNodes[2].textContent;
+            var otro = document.getElementsByClassName('smartAfiliadoDivItem f5');
+            var afiliado = otro[0].childNodes[1].textContent;
+            var laurl = localiza + 'web/codslabo?documento=' + encodeURIComponent(documento) + "&fecha=" + encodeURIComponent(fecha)+ "&afiliado=" + encodeURIComponent(afiliado);
+            GM_xmlhttpRequest({
+                method: 'GET', url: laurl, onload: function (responseDetails) {
+                    var rpta=JSON.parse(responseDetails.response);
+                    if (!rpta.success) {
+                        alert(rpta.txerr);
+                    } else {
+                        valores=rpta.valores;
+                        voyvalor=1;
+                        $('#smartPractica').val(rpta.valores[0]);
+                        $('#buscarPractica').click();
+                    }
+                }
+            });
+        };
+        return false;
+    };
+    miboton.type="button";
+    var miespan1 = document.createElement('span');
+    miespan1.className = "ui-button-icon-primary ui-icon ui-icon-gear";
+    var miespan2 = document.createElement('span');
+    miespan2.className = "ui-button-text";
+    miboton.appendChild(miespan1);
+    miboton.appendChild(miespan2);
+    tdboton.appendChild(miboton);
+    var miboton = document.createElement('button');
+    miboton.id="buscarDiagnosis2";
+    var valores=[];
+    var voyvalor=0;
+    miboton.onclick = function () {
+        var hay = document.getElementsByClassName('smartAfiliadoDivItem f3');
+        if (hay && hay.length) {
+            var documento = hay[0].childNodes[2].textContent;
+            var otro = document.getElementsByClassName('smartAfiliadoDivItem f5');
+            var afiliado = otro[0].childNodes[1].textContent;
+            var laurl = localiza + 'web/prelabo?documento=' + encodeURIComponent(documento) + "&afiliado=" + encodeURIComponent(afiliado);
+            GM_xmlhttpRequest({
+                method: 'GET', url: laurl, onload: function (responseDetails) {
+                    var rpta=JSON.parse(responseDetails.response);
+                    if (!rpta.success) {
+                        alert(rpta.txerr);
+                    } else {
+                        valores=rpta.valores;
+                        voyvalor=1;
+                        $('#smartPractica').val(rpta.valores[0]);
+                        $('#buscarPractica').click();
+                    }
+                }
+            });
+        };
+        return false;
+    };
+    miboton.type="button";
+    var miespan1 = document.createElement('span');
+    miespan1.className = "ui-button-icon-primary ui-icon ui-icon-plusthick";
+    var miespan2 = document.createElement('span');
+    miespan2.className = "ui-button-text";
+    miboton.appendChild(miespan1);
+    miboton.appendChild(miespan2);
+    tdboton.appendChild(miboton);
+})();
