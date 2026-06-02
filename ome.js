@@ -71,7 +71,7 @@
                         };
 
                         GM_setValue("afiliadoPendiente", datosAfiliado);
-                        GM_setValue('enfocar_localhost', true);
+                        GM_setValue('enfocar_localhost', Date.now());
                     });
 
                     celdas[2].appendChild(botonAuto);
@@ -205,9 +205,8 @@
     // ==========================================
     if (urlActual.includes(URL_LOCAL)) {
         GM_addValueChangeListener('enfocar_localhost', function(key, oldValue, newValue, remote) {
-            if (remote && newValue === true) {
+            if (remote) {
                 window.focus();
-                GM_setValue('enfocar_localhost', false);
 
                 setTimeout(() => {
                     VerificarYProcesarBusqueda();
