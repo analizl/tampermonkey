@@ -19,7 +19,8 @@
 (function() {
     'use strict';
 
-    const URL_LOCAL = "https://dweb.diagnosis.com.ar/informes/descarga";
+    //const URL_LOCAL = "localhost:3000/informes/descarga";
+    const URL_LOCAL = "dweb.diagnosis.com.ar/informes/descarga";
     const URL_PAMI = "https://pe.pami.org.ar/controllers/transmision.php";
 
     const urlActual = window.location.href;
@@ -27,7 +28,7 @@
     // ==========================================
     // PARTE 1: CÓDIGO PARA LA PÁGINA DE PAMI
     // ==========================================
-    if (urlActual.includes("pami.org.ar")) {
+    if (urlActual.includes(URL_PAMI)) {
 
         function InyectarBotonesPAMI() {
             const filas = document.querySelectorAll("table.bandeja-transmision tbody tr[data-n-orden]");
@@ -202,7 +203,7 @@
     // ==========================================
     // PARTE 2: CÓDIGO PARA D+Web
     // ==========================================
-    if (urlActual.includes("dweb.diagnosis.com.ar/informes/descarga")) {
+    if (urlActual.includes(URL_LOCAL)) {
         GM_addValueChangeListener('enfocar_localhost', function(key, oldValue, newValue, remote) {
             if (remote && newValue === true) {
                 window.focus();
@@ -264,6 +265,23 @@
         }, 100);
     }
 
+    function ResetearMemoriaLocalhost() {
+        console.log("Reseteando buscador y memoria de manera silenciosa...");
+        window.nroOrdenActualEnProceso = null; // Eliminamos la orden vieja de la memoria
+
+        const buscador = document.querySelector('input[data-slot="input"]');
+        if (!buscador) return;
+
+        // const botonClear = document.querySelector('[data-slot="clear-button"]');
+        // if (botonClear) {
+        //     botonClear.click();
+        // }
+
+        // const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        // setter.call(buscador, "");
+        // buscador.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
     function LimpiarBuscadorNextUI() {
         const buscador = document.querySelector('input[data-slot="input"]');
         if (!buscador) return;
@@ -296,6 +314,20 @@
 
         const buscarTablaResultados = setInterval(() => {
             intentos++;
+
+            const textoPagina = document.body.innerText;
+            if (
+                textoPagina.includes("No se ha encontrado al paciente") || 
+                textoPagina.includes("No se han encontrado estudios") || 
+                textoPagina.includes("último mes") || 
+                textoPagina.includes("not found")
+            ) {
+                clearInterval(buscarTablaResultados);
+                console.log("Error detectado en pantalla (Paciente ausente o sin estudios recientes). Reseteando...");
+                ResetearMemoriaLocalhost();
+                return;
+            }
+
             const filasResultados = document.querySelectorAll("table tbody tr");
 
             if (filasResultados.length > 0) {
@@ -303,7 +335,7 @@
                 if (primerCelda && (primerCelda.innerText.includes("ningún") || primerCelda.innerText.includes("No dejes"))) {
                     if (intentos > 60) {
                         clearInterval(buscarTablaResultados);
-                        // LimpiarBuscadorNextUI(); // Limpiamos porque terminó el proceso (sin datos)
+                        ResetearMemoriaLocalhost(); // Limpiamos porque terminó el proceso (sin datos)
                     }
                     return;
                 }
@@ -339,21 +371,8 @@
                                             console.log("Descarga silenciosa completada con éxito en el disco.");
                                             // AHORA SÍ: El archivo se guardó completamente, procedemos a limpiar
                                             LimpiarBuscadorNextUI();
-                                        },
-                                        onerror: (err) => {
-                                            console.error("Error en GM_download, ejecutando click de respaldo:", err);
-                                            // Si falla la descarga directa, usamos el click convencional
-                                            botonDescarga.click();
-                                            // Al ser un click ciego, le damos 1.5 segundos de gracia para iniciar y limpiamos
-                                            // setTimeout(LimpiarBuscadorNextUI, 1500);
                                         }
                                     });
-                                } else {
-                                    // Caso de respaldo: Si no hay data-url, ejecutamos click convencional
-                                    console.log("No se detectó data-url directa. Ejecutando click convencional...");
-                                    botonDescarga.click();
-                                    // Esperamos un tiempo prudencial para asegurar el inicio del proceso antes de limpiar
-                                    // setTimeout(LimpiarBuscadorNextUI, 1500);
                                 }
                             }
                         }
@@ -362,15 +381,16 @@
 
                 if (!filaEncontrada) {
                     console.log(`No se encontró ninguna fila en tu sistema que coincida con el código de práctica de PAMI: ${codigoBuscado}`);
+                    window.alert(`No se encontró ninguna fila en tu sistema que coincida con el código de práctica de PAMI: ${codigoBuscado}`);
                     // Si la tabla cargó pero la práctica no coincide, el proceso terminó; limpiamos
-                    // LimpiarBuscadorNextUI();
+                    // ResetearMemoriaLocalhost();
                 }
             }
 
             if (intentos > 60) {
                 clearInterval(buscarTablaResultados);
                 console.log("Tiempo de espera agotado. Los resultados no cargaron.");
-                // LimpiarBuscadorNextUI();
+                // ResetearMemoriaLocalhost();
             }
         }, 150);
     }
