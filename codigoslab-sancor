@@ -1,0 +1,306 @@
+// ==UserScript==
+// @name         Códigos Laboratorio - Sancor
+// @namespace    http://tampermonkey.net/
+// @version      2.0
+// @description  Carga códigos en SanCor Salud interactuando correctamente con el mat-autocomplete de Angular
+// @author       Diagnosis
+// @match        https://autorizacionesprestadoresui.sancorsalud.com.ar/*
+// @grant        GM_xmlhttpRequest
+// @connect      localhost
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Función auxiliar para pausar el script
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    function formatearCodigoPrestacion(codigoCrudo) {
+        let limpio = codigoCrudo.trim();
+        if (!limpio.startsWith('6')) {
+            limpio = '66' + limpio.padStart(4, '0');
+        }
+        return limpio;
+    }
+
+    // Fuerza a Angular a enterarse de que escribimos en el input
+    function escribirEnInput(inputElement, valor) {
+        inputElement.value = valor;
+        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+        inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    // --- FUNCIÓN OPTIMIZADA: Asegura la apertura del selector de cantidad ---
+    async function modificarCantidadDeCodigo(codigoFormateado, cantidadDeseada) {
+        if (cantidadDeseada <= 1) return;
+
+        console.log(`[Tampermonkey] Buscando la fila para el código ${codigoFormateado}...`);
+        await sleep(800); // Un toque más de tiempo para que se asiente la fila en el DOM
+
+        const filas = document.querySelectorAll('mat-row');
+        let filaEncontrada = null;
+
+        for (let fila of filas) {
+            const celdaCodigo = fila.querySelector('.mat-column-codigo_prestacion, .mat-column-prestacion_sancor, .mat-column-prestacion');
+            if (celdaCodigo && celdaCodigo.textContent.includes(codigoFormateado)) {
+                filaEncontrada = fila;
+                break;
+            }
+        }
+
+        if (!filaEncontrada) {
+            console.error(`[Tampermonkey] No se pudo encontrar la fila para el código: ${codigoFormateado}`);
+            return;
+        }
+
+        // 1. Buscamos el disparador del select (el div interno que realmente tiene el evento Click en Angular)
+        let disparadorSelect = filaEncontrada.querySelector('.mat-select-trigger');
+
+        // Si no encuentra el trigger específico, usamos el mat-select genérico como plan B
+        if (!disparadorSelect) {
+            disparadorSelect = filaEncontrada.querySelector('mat-select');
+        }
+
+        if (!disparadorSelect) {
+            console.error("[Tampermonkey] No se encontró ningún elemento clickable de cantidad en esta fila.");
+            return;
+        }
+
+        console.log(`[Tampermonkey] ¡Fila localizada! Abriendo el selector de cantidad...`);
+
+        // 2. Ejecutamos el click en el disparador correcto
+        disparadorSelect.click();
+
+        // 3. Esperamos el panel de opciones usando selectores alternativos de Angular Material
+        let panelSelect = null;
+        for (let i = 0; i < 30; i++) {
+            // Buscamos tanto por .mat-select-panel como por contenedores genéricos de overlay (cdk-overlay-pane)
+            panelSelect = document.querySelector('.mat-select-panel, .mat-autocomplete-panel, cdk-overlay-pane');
+            if (panelSelect && panelSelect.querySelector('mat-option')) {
+                break;
+            }
+            await sleep(100);
+        }
+
+        if (!panelSelect) {
+            console.error("[Tampermonkey] El panel de opciones de cantidad nunca se abrió en el DOM global.");
+            return;
+        }
+
+        // 4. Seleccionamos el número de cantidad correspondiente
+        const opciones = panelSelect.querySelectorAll('mat-option');
+        let opcionCorrecta = null;
+
+        for (let opt of opciones) {
+            if (opt.textContent.trim() === String(cantidadDeseada)) {
+                opcionCorrecta = opt;
+                break;
+            }
+        }
+
+        if (opcionCorrecta) {
+            console.log(`[Tampermonkey] Haciendo clic en la opción de cantidad: ${cantidadDeseada}`);
+            opcionCorrecta.click();
+        } else {
+            console.warn(`[Tampermonkey] No se encontró el número ${cantidadDeseada}. Clickeando primera alternativa.`);
+            if (opciones.length > 0) opciones[0].click();
+        }
+
+        await sleep(600); // Pausa post-clic para que Angular guarde la cantidad
+    }
+
+    // Función asíncrona para procesar la cola de códigos uno por uno
+    async function cargarCodigosEnFormulario(listaCodigos) {
+        let codigosFallidos = [];
+
+        for (let i = 0; i < listaCodigos.length; i++) {
+            const item = listaCodigos[i];
+            const codigoFinal = formatearCodigoPrestacion(item.codigo);
+            const cantidadFinal = item.repeticiones || 1;
+
+            const inputPrestacion = document.querySelector('input[aria-label="Código o descripción de prestación"]');
+            if (!inputPrestacion) {
+                console.error("No se encontró el campo para ingresar el código.");
+                break;
+            }
+
+            // 1. Hacemos foco y escribimos el código formateado
+            inputPrestacion.focus();
+            escribirEnInput(inputPrestacion, codigoFinal);
+
+            // 2. Esperamos a que Angular despliegue el panel de opciones (mat-autocomplete)
+            // Revisamos el DOM durante un máximo de 3 segundos buscando el panel activo
+            let panelOpciones = null;
+            for (let intentos = 0; intentos < 30; intentos++) {
+                panelOpciones = document.querySelector('.mat-autocomplete-panel');
+                // Nos aseguramos de que el panel contenga opciones visibles
+                if (panelOpciones && panelOpciones.querySelector('mat-option')) {
+                    break;
+                }
+                await sleep(100);
+            }
+
+            if (!panelOpciones) {
+                console.warn(`[Tampermonkey] No se desplegó el panel para: ${codigoFinal}`);
+                codigosFallidos.push(`${codigoFinal} (${item.nombre || 'Sin nombre'} - No desplegó opciones)`);
+
+                // Limpiamos de forma agresiva y cerramos el autocompletar huyendo del input
+                escribirEnInput(inputPrestacion, "");
+                inputPrestacion.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+                inputPrestacion.blur();
+                await sleep(500); // Pausa para que Angular destruya el panel viejo
+                continue;
+            }
+
+            const opciones = panelOpciones.querySelectorAll('mat-option');
+            let opcionEncontrada = null;
+
+            for (let opt of opciones) {
+                const textoOpcion = opt.textContent || "";
+                // Validamos si la opción contiene el número de código (ej: "600001 - ACTO BIOQUIMICO")
+                if (textoOpcion.includes(codigoFinal)) {
+                    opcionEncontrada = opt;
+                    break;
+                }
+            }
+
+            // Si no encuentra una coincidencia exacta por número, elegimos la primera opción por defecto
+            if (opcionEncontrada) {
+                opcionEncontrada.click();
+
+                // Esperamos que el input se limpie solo (confirmación de Angular)
+                let seLimpio = false;
+                for (let esperas = 0; esperas < 20; esperas++) {
+                    if (inputPrestacion.value === "") {
+                        seLimpio = true;
+                        break;
+                    }
+                    await sleep(100);
+                }
+
+                if (!seLimpio) {
+                    codigosFallidos.push(`${codigoFinal} (${item.nombre || 'Sin nombre'} - Error al confirmar selección)`);
+                    escribirEnInput(inputPrestacion, "");
+                    inputPrestacion.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+                    inputPrestacion.blur();
+                    await sleep(500);
+                    continue;
+                }
+
+                if (cantidadFinal > 1) {
+                    await modificarCantidadDeCodigo(codigoFinal, cantidadFinal);
+                }
+
+            } else {
+                // CASO C: EL PANEL SE ABRIÓ, PERO EL CÓDIGO NO ESTÁ EN LA LISTA
+                console.warn(`[Tampermonkey] Código ${codigoFinal} no coincide con ninguna opción del panel.`);
+                codigosFallidos.push(`${codigoFinal} (${item.nombre || 'Sin nombre'} - No encontrado en la lista de opciones)`);
+
+                // Forzamos el cierre del panel mandando la tecla Escape al input y quitando el foco
+                escribirEnInput(inputPrestacion, "");
+                inputPrestacion.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+                inputPrestacion.blur();
+
+                await sleep(600); // Tiempo clave para que el panel desaparezca físicamente del HTML
+            }
+
+            // Pequeña pausa de cortesía antes de arrancar con el siguiente de la lista
+            await sleep(500);
+        }
+
+        if (codigosFallidos.length === 0) {
+            alert("¡Carga masiva finalizada con éxito! Se cargaron todos los códigos correctamente.");
+        } else {
+            // Te arma un reporte prolijo con saltos de línea mostrando los códigos huérfanos
+            const reporteErrores = codigosFallidos.join('\n• ');
+            alert(`Proceso finalizado, pero hubo problemas con algunos códigos:\n\n• ${reporteErrores}\n\nPor favor, cargalos manualmente.`);
+        }
+    }
+
+    function miAccionPersonalizada(numeroAfiliado) {
+        const urlApi = `http://localhost:8001/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=125`;
+
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: urlApi,
+            headers: { "Content-Type": "application/json" },
+            onload: function(response) {
+                if (response.status === 200) {
+                    try {
+                        const jsonRespuesta = JSON.parse(response.responseText);
+                        if (jsonRespuesta && jsonRespuesta.resultCodigos && jsonRespuesta.resultCodigos.length > 0) {
+                            cargarCodigosEnFormulario(jsonRespuesta.resultCodigos);
+                        } else {
+                            alert("No se encontraron códigos pendientes para este afiliado.");
+                        }
+                    } catch (e) {
+                        console.error("[Tampermonkey] Error de parseo JSON:", e);
+                    }
+                } else {
+                    alert("Error en la API. Status: " + response.status);
+                }
+            },
+            onerror: function() {
+                alert("Error de red. Verificá tu servidor local.");
+            }
+        });
+    }
+
+    function extraerAfiliado(texto) {
+        // Busca "Credencial:" seguido de números y barras opcionales
+        const match = texto.match(/Credencial:\s*([0-9\/]+)/i);
+        if (match && match[1]) {
+            // Reemplazamos la barra "/" por un guion o la eliminamos si tu API la prefiere limpia.
+            // Actualmente la deja limpia (ej: "234934700") o podés cambiarlo según pida tu backend.
+            return match[1].replace('/', '').trim();
+        }
+        return null;
+    }
+
+    function crearBotonEnAlerta(alertaElement) {
+        if (alertaElement.parentElement.querySelector('.mi-boton-alerta-sancor')) return;
+
+        const textoCartel = alertaElement.textContent || "";
+        const nroAfiliado = extraerAfiliado(textoCartel);
+
+        if (!nroAfiliado) return;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.innerText = `Cargar Prácticas de Afiliado ${nroAfiliado} ⚡`;
+        btn.className = 'mi-boton-alerta-sancor';
+
+        // Estilos
+        btn.style.marginTop = '10px';
+        btn.style.marginBottom = '10px';
+        btn.style.marginLeft = '8px';
+        btn.style.padding = '12px 24px';
+        btn.style.backgroundColor = '#17a2b8';
+        btn.style.color = 'white';
+        btn.style.border = 'none';
+        btn.style.borderRadius = '8px';
+        btn.style.cursor = 'pointer';
+        btn.style.fontWeight = 'bold';
+        btn.style.boxShadow = '0px 4px 6px rgba(0,0,0,0.15)';
+        btn.style.display = 'block';
+
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            miAccionPersonalizada(nroAfiliado);
+        });
+
+        alertaElement.after(btn);
+    }
+
+    setInterval(() => {
+        const alertas = document.querySelectorAll('app-alert');
+        alertas.forEach(alerta => {
+            if (alerta.textContent && alerta.textContent.includes('HABILITADO')) {
+                crearBotonEnAlerta(alerta);
+            }
+        });
+    }, 1000);
+
+})();
