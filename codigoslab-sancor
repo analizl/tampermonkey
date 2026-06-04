@@ -678,7 +678,7 @@
 
     function miAccionPersonalizada(numeroAfiliado) {
         //const urlApi = `http://localhost:8001/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=125`;
-        const urlApi = `https://srapp.diagnosis.com.ar/api/v2/laboratorio/paciente/234934700/codigos?obra=125`;
+        const urlApi = `https://srapp.diagnosis.com.ar/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=125`;
 
         GM_xmlhttpRequest({
             method: "GET",
