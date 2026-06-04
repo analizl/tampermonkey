@@ -2,7 +2,7 @@
 // @name         Códigos Laboratorio - Sancor
 // @namespace    http://tampermonkey.net/
 // @version      2.0
-// @description  Carga códigos en SanCor Salud interactuando correctamente con el mat-autocomplete de Angular
+// @description  Carga automática códigos Laboratorio Sancor
 // @author       Diagnosis
 // @match        https://autorizacionesprestadoresui.sancorsalud.com.ar/*
 // @grant        GM_xmlhttpRequest
@@ -13,30 +13,200 @@
 (function() {
     'use strict';
 
+    let datosMedicosTemporales = {
+        codigoDiagnostico: null,
+        medicoCodigo: null,
+        medicoNombre: null
+    };
+
     // Función auxiliar para pausar el script
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     function formatearCodigoPrestacion(codigoCrudo) {
         let limpio = codigoCrudo.trim();
-        if (!limpio.startsWith('6')) {
-            limpio = '66' + limpio.padStart(4, '0');
+        if (limpio.length === 6) {
+            return limpio;
         }
-        return limpio;
+
+        return '66' + limpio.padStart(4, '0');
     }
 
-    // Fuerza a Angular a enterarse de que escribimos en el input
     function escribirEnInput(inputElement, valor) {
         inputElement.value = valor;
         inputElement.dispatchEvent(new Event('input', { bubbles: true }));
         inputElement.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    // --- FUNCIÓN OPTIMIZADA: Asegura la apertura del selector de cantidad ---
+    function mostrarModalErrores(codigosFallidos) {
+        const modalViejo = document.getElementById('tm-modal-error-container');
+        if (modalViejo) modalViejo.remove();
+
+        // Contenedor principal
+        const contenedor = document.createElement('div');
+        contenedor.id = 'tm-modal-error-container';
+        contenedor.style.position = 'fixed';
+        contenedor.style.top = '0';
+        contenedor.style.left = '0';
+        contenedor.style.width = '100vw';
+        contenedor.style.height = '100vh';
+        contenedor.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        contenedor.style.display = 'flex';
+        contenedor.style.justifyContent = 'center';
+        contenedor.style.alignItems = 'center';
+        contenedor.style.zIndex = '99999';
+        contenedor.style.fontFamily = 'Roboto, "Helvetica Neue", sans-serif';
+
+        // Caja del Modal
+        const modal = document.createElement('div');
+        modal.style.backgroundColor = '#ffffff';
+        modal.style.width = '480px';
+        modal.style.maxWidth = '90%';
+        modal.style.borderRadius = '12px';
+        modal.style.boxShadow = '0px 8px 24px rgba(0,0,0,0.3)';
+        modal.style.overflow = 'hidden';
+        modal.style.animation = 'fadeIn 0.2s ease-out';
+
+        // Encabezado
+        const header = document.createElement('div');
+        const todoOk = codigosFallidos.length === 0;
+        header.style.backgroundColor = todoOk ? '#28a745' : '#dc3545';
+        header.style.color = 'white';
+        header.style.padding = '16px 20px';
+        header.style.fontWeight = 'bold';
+        header.style.fontSize = '18px';
+        header.innerText = todoOk ? '¡Proceso Exitoso! 🎉' : '⚠️ Códigos no cargados';
+
+        // Cuerpo del modal
+        const body = document.createElement('div');
+        body.style.padding = '20px';
+        body.style.color = '#333333';
+        body.style.fontSize = '14px';
+        body.style.lineHeight = '1.5';
+
+        if (todoOk) {
+            body.innerHTML = '<p style="margin:0; font-size: 15px; text-align:center;">Se procesaron y cargaron todas las prácticas médicas con éxito en el sistema.</p>';
+        } else {
+            body.innerHTML = '<p style="margin:0 0 12px 0; font-weight: 500;">Las siguientes prácticas no se pudieron auto-completar y requieren carga manual:</p>';
+
+            // Lista de códigos
+            const ul = document.createElement('ul');
+            ul.style.margin = '0 0 20px 0';
+            ul.style.paddingLeft = '20px';
+            ul.style.maxHeight = '180px';
+            ul.style.overflowY = 'auto';
+            ul.style.border = '1px solid #eeeeee';
+            ul.style.paddingTop = '8px';
+            ul.style.paddingBottom = '8px';
+            ul.style.borderRadius = '6px';
+            ul.style.backgroundColor = '#f9f9f9';
+
+            codigosFallidos.forEach(err => {
+                const li = document.createElement('li');
+                li.style.marginBottom = '6px';
+                li.style.color = '#555555';
+                li.innerHTML = `<strong>${err.split(' ')[0]}</strong> ${err.substring(err.indexOf(' '))}`;
+                ul.appendChild(li);
+            });
+            body.appendChild(ul);
+
+            // Botón de Copiar al Portapapeles (Solo si hay errores)
+            const btnCopiar = document.createElement('button');
+            btnCopiar.type = 'button';
+            btnCopiar.innerText = '📋 Copiar códigos fallidos';
+            btnCopiar.style.width = '100%';
+            btnCopiar.style.marginBottom = '10px';
+            btnCopiar.style.padding = '10px';
+            btnCopiar.style.backgroundColor = '#6c757d';
+            btnCopiar.style.color = 'white';
+            btnCopiar.style.border = 'none';
+            btnCopiar.style.borderRadius = '6px';
+            btnCopiar.style.cursor = 'pointer';
+            btnCopiar.style.fontWeight = '500';
+            btnCopiar.style.transition = 'background-color 0.1s';
+
+            btnCopiar.addEventListener('click', () => {
+                const textoACopiar = codigosFallidos.map(e => e.split(',')).join('\n');
+
+                const campoTemporal = document.createElement('textarea');
+                campoTemporal.value = textoACopiar;
+                campoTemporal.style.position = 'fixed';
+                campoTemporal.style.top = '0';
+                campoTemporal.style.left = '0';
+                campoTemporal.style.opacity = '0';
+                document.body.appendChild(campoTemporal);
+
+                // Seleccionar el contenido y copiarlo al portapapeles
+                campoTemporal.focus();
+                campoTemporal.select();
+
+                try {
+                    const exito = document.execCommand('copy');
+                    if (exito) {
+                        btnCopiar.innerText = '✅ ¡Copiado!';
+                        btnCopiar.style.backgroundColor = '#28a745';
+                    } else {
+                        btnCopiar.innerText = '❌ Error al copiar';
+                    }
+                } catch (err) {
+                    console.error("Error con execCommand:", err);
+                    btnCopiar.innerText = '❌ No permitido';
+                }
+
+                // Eliminar el elemento temporal
+                document.body.removeChild(campoTemporal);
+
+                setTimeout(() => {
+                    btnCopiar.innerText = '📋 Copiar códigos fallidos';
+                    btnCopiar.style.backgroundColor = '#6c757d';
+                }, 2000);
+            });
+            body.appendChild(btnCopiar);
+        }
+
+        // Botón Cerrar
+        const btnCerrar = document.createElement('button');
+        btnCerrar.type = 'button';
+        btnCerrar.innerText = 'Cerrar';
+        btnCerrar.style.width = '100%';
+        btnCerrar.style.padding = '10px';
+        btnCerrar.style.backgroundColor = '#007bff';
+        btnCerrar.style.color = 'white';
+        btnCerrar.style.border = 'none';
+        btnCerrar.style.borderRadius = '6px';
+        btnCerrar.style.cursor = 'pointer';
+        btnCerrar.style.fontWeight = 'bold';
+
+        btnCerrar.addEventListener('click', async () => {
+            document.body.removeChild(contenedor);
+            console.log("[Tampermonkey] Modal cerrado. Iniciando segunda fase de carga...");
+
+            await sleep(300);
+
+            // Se ejecuta la carga de Diagnóstico y Médico
+            if (datosMedicosTemporales.codigoDiagnostico) {
+                await automatizarDiagnostico(datosMedicosTemporales.codigoDiagnostico);
+                await sleep(400);
+            }
+
+            if (datosMedicosTemporales.medicoCodigo && datosMedicosTemporales.medicoNombre) {
+                await automatizarPrescriptor(datosMedicosTemporales.medicoCodigo, datosMedicosTemporales.medicoNombre);
+            }
+
+            datosMedicosTemporales = { codigoDiagnostico: null, medicoCodigo: null, medicoNombre: null };
+        });
+
+        body.appendChild(btnCerrar);
+        modal.appendChild(header);
+        modal.appendChild(body);
+        contenedor.appendChild(modal);
+        document.body.appendChild(contenedor);
+    }
+
     async function modificarCantidadDeCodigo(codigoFormateado, cantidadDeseada) {
         if (cantidadDeseada <= 1) return;
 
         console.log(`[Tampermonkey] Buscando la fila para el código ${codigoFormateado}...`);
-        await sleep(800); // Un toque más de tiempo para que se asiente la fila en el DOM
+        await sleep(800);
 
         const filas = document.querySelectorAll('mat-row');
         let filaEncontrada = null;
@@ -54,10 +224,8 @@
             return;
         }
 
-        // 1. Buscamos el disparador del select (el div interno que realmente tiene el evento Click en Angular)
         let disparadorSelect = filaEncontrada.querySelector('.mat-select-trigger');
 
-        // Si no encuentra el trigger específico, usamos el mat-select genérico como plan B
         if (!disparadorSelect) {
             disparadorSelect = filaEncontrada.querySelector('mat-select');
         }
@@ -67,15 +235,10 @@
             return;
         }
 
-        console.log(`[Tampermonkey] ¡Fila localizada! Abriendo el selector de cantidad...`);
-
-        // 2. Ejecutamos el click en el disparador correcto
         disparadorSelect.click();
 
-        // 3. Esperamos el panel de opciones usando selectores alternativos de Angular Material
         let panelSelect = null;
         for (let i = 0; i < 30; i++) {
-            // Buscamos tanto por .mat-select-panel como por contenedores genéricos de overlay (cdk-overlay-pane)
             panelSelect = document.querySelector('.mat-select-panel, .mat-autocomplete-panel, cdk-overlay-pane');
             if (panelSelect && panelSelect.querySelector('mat-option')) {
                 break;
@@ -88,7 +251,6 @@
             return;
         }
 
-        // 4. Seleccionamos el número de cantidad correspondiente
         const opciones = panelSelect.querySelectorAll('mat-option');
         let opcionCorrecta = null;
 
@@ -107,14 +269,327 @@
             if (opciones.length > 0) opciones[0].click();
         }
 
-        await sleep(600); // Pausa post-clic para que Angular guarde la cantidad
+        await sleep(600);
     }
 
-    // Función asíncrona para procesar la cola de códigos uno por uno
+    async function automatizarEfectorYEspecialidad() {
+        console.log("[Tampermonkey] Evaluando campo Efector...");
+
+        const inputEfector = document.querySelector('input[formcontrolname="efectorControl"]');
+        if (!inputEfector) {
+            console.warn("[Tampermonkey] No se encontró el campo input de Efector.");
+            return;
+        }
+
+        inputEfector.focus();
+        escribirEnInput(inputEfector, " ");
+        await sleep(100);
+        escribirEnInput(inputEfector, "");
+
+        let panelEfector = null;
+        for (let i = 0; i < 20; i++) {
+            panelEfector = document.querySelector('.mat-autocomplete-panel');
+            if (panelEfector) break;
+            await sleep(100);
+        }
+
+        if (!panelEfector) {
+            console.log("[Tampermonkey] No se abrió ningún panel de opciones para Efector.");
+            return;
+        }
+
+        // Cuantas opciones hay
+        const opcionesEfector = panelEfector.querySelectorAll('mat-option');
+        console.log(`[Tampermonkey] Opciones encontradas en Efector: ${opcionesEfector.length}`);
+
+        // Si hay EXACTAMENTE una sola opción, la elegimos automáticamente
+        if (opcionesEfector.length === 1) {
+            const unicaOpcion = opcionesEfector[0];
+            console.log(`[Tampermonkey] Una sola opción detectada (${unicaOpcion.textContent.trim()}). Seleccionando...`);
+
+            unicaOpcion.click();
+            inputEfector.blur();
+
+            await sleep(800);
+
+            //await automatizarEspecialidadFila();
+        } else {
+            console.log("[Tampermonkey] Existen múltiples opciones o ninguna. Se deja el campo vacío.");
+            inputEfector.blur();
+            inputEfector.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+        }
+    }
+
+    async function automatizarEspecialidadFila() {
+        const selectEspecialidad = document.querySelector('mat-select[formcontrolname="especialidad"]');
+        if (!selectEspecialidad) {
+            console.warn("[Tampermonkey] No se encontró el mat-select de Especialidad.");
+            return;
+        }
+
+        selectEspecialidad.click();
+
+        let panelSelect = null;
+        for (let i = 0; i < 20; i++) {
+            panelSelect = document.querySelector('.mat-select-panel, cdk-overlay-pane');
+            if (panelSelect && panelSelect.querySelector('mat-option')) break;
+            await sleep(100);
+        }
+
+        if (!panelSelect) {
+            console.warn("[Tampermonkey] No se abrió el panel de opciones de Especialidad.");
+            return;
+        }
+
+        const opcionesEspecialidad = panelSelect.querySelectorAll('mat-option');
+        console.log(`[Tampermonkey] Opciones encontradas en Especialidad: ${opcionesEspecialidad.length}`);
+
+        if (opcionesEspecialidad.length === 1) {
+            console.log(`[Tampermonkey] Una sola especialidad detectada (${opcionesEspecialidad[0].textContent.trim()}). Seleccionando...`);
+            opcionesEspecialidad[0].click();
+        } else {
+            console.log("[Tampermonkey] Múltiples especialidades detectadas o ninguna. Se descarta la auto-selección.");
+            const overlay = document.querySelector('.cdk-overlay-backdrop');
+            if (overlay) overlay.click();
+        }
+    }
+
+    async function automatizarMarcaGuardia() {
+        console.log("[Tampermonkey] Configurando ámbito de atención (Marca de guardia)...");
+
+        const componenteGuardia = document.querySelector('app-marca-guardia');
+        if (!componenteGuardia) {
+            console.warn("[Tampermonkey] No se encontró el componente <app-marca-guardia> en pantalla.");
+            return;
+        }
+
+        let disparadorSelect = componenteGuardia.querySelector('.mat-select-trigger');
+        if (!disparadorSelect) {
+            disparadorSelect = componenteGuardia.querySelector('mat-select');
+        }
+
+        if (!disparadorSelect) {
+            console.error("[Tampermonkey] No se encontró el selector de Marca de guardia.");
+            return;
+        }
+
+        disparadorSelect.click();
+
+        let panelSelect = null;
+        for (let i = 0; i < 20; i++) {
+            panelSelect = document.querySelector('.mat-select-panel, cdk-overlay-pane');
+            if (panelSelect && panelSelect.querySelector('mat-option')) break;
+            await sleep(100);
+        }
+
+        if (!panelSelect) {
+            console.error("[Tampermonkey] No se abrió el panel de opciones de Marca de guardia.");
+            return;
+        }
+
+        // Se selecciona la opcion Programada
+        const opciones = panelSelect.querySelectorAll('mat-option');
+        let opcionProgramada = null;
+
+        for (let opt of opciones) {
+            if (opt.textContent.trim().toLowerCase().includes('programada')) {
+                opcionProgramada = opt;
+                break;
+            }
+        }
+
+        if (opcionProgramada) {
+            console.log("[Tampermonkey] Seleccionando opción 'Programada'.");
+            opcionProgramada.click();
+        } else {
+            console.warn("[Tampermonkey] No se encontró la opción 'Programada' en la lista flotante.");
+            const overlay = document.querySelector('.cdk-overlay-backdrop');
+            if (overlay) overlay.click();
+        }
+
+        await sleep(400);
+    }
+
+    async function automatizarDiagnostico(codigoDiagnostico) {
+        if (!codigoDiagnostico) {
+            console.log("[Tampermonkey] La API no devolvió ningún diagnóstico.");
+            return;
+        }
+
+        const limpioCie = String(codigoDiagnostico).trim().toUpperCase();
+        console.log(`[Tampermonkey] Buscando el diagnóstico: ${limpioCie}...`);
+
+        const componenteDiag = document.querySelector('app-diagnostico');
+        const inputDiag = componenteDiag ? componenteDiag.querySelector('input[formcontrolname="descripcion"]') : null;
+
+        if (!inputDiag) {
+            console.warn("[Tampermonkey] No se localizó el cuadro de texto para Diagnóstico.");
+            return;
+        }
+
+        inputDiag.focus();
+        escribirEnInput(inputDiag, limpioCie);
+
+        let panelDiag = null;
+        for (let i = 0; i < 30; i++) {
+            panelDiag = document.querySelector('.mat-autocomplete-panel');
+            if (panelDiag && panelDiag.querySelector('mat-option')) break;
+            await sleep(100);
+        }
+
+        if (!panelDiag) {
+            console.warn("[Tampermonkey] El buscador de diagnóstico no desplegó opciones.");
+            escribirEnInput(inputDiag, "");
+            inputDiag.blur();
+            return;
+        }
+
+        const opciones = panelDiag.querySelectorAll('mat-option');
+        let opcionExacta = null;
+
+        for (let opt of opciones) {
+            const textoOpcion = (opt.textContent || "").trim().toUpperCase();
+
+            if (textoOpcion.startsWith(limpioCie) || textoOpcion.includes(` ${limpioCie} `) || textoOpcion.includes(`${limpioCie} -`)) {
+                opcionExacta = opt;
+                break;
+            }
+        }
+
+        if (opcionExacta) {
+            console.log(`[Tampermonkey] Diagnóstico exacto encontrado (${opcionExacta.textContent.trim()}). Seleccionando...`);
+            opcionExacta.click();
+        } else {
+            console.warn(`[Tampermonkey] No se encontró ninguna coincidencia exacta para "${limpioCie}". Se vacía el campo.`);
+            escribirEnInput(inputDiag, "");
+            inputDiag.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+            inputDiag.blur();
+        }
+
+        await sleep(400);
+    }
+
+    async function automatizarPrescriptor(medicoCodigo, medicoNombre) {
+        console.log("[Tampermonkey] Configurando datos del médico prescriptor...");
+
+        const componentePrescriptor = document.querySelector('app-prescriptor');
+        if (!componentePrescriptor) {
+            console.warn("[Tampermonkey] No se encontró el componente <app-prescriptor>.");
+            return;
+        }
+
+        const selectTipo = componentePrescriptor.querySelector('mat-form-field.tipo mat-select');
+        if (!selectTipo) {
+            console.error("[Tampermonkey] No se localizó el selector de Tipo de matrícula.");
+            return;
+        }
+
+        selectTipo.click();
+
+        let panelSelect = null;
+        for (let i = 0; i < 20; i++) {
+            panelSelect = document.querySelector('.mat-select-panel, cdk-overlay-pane');
+            if (panelSelect && panelSelect.querySelector('mat-option')) break;
+            await sleep(100);
+        }
+
+        if (!panelSelect) {
+            console.error("[Tampermonkey] No se desplegaron las opciones para Tipo de matrícula.");
+            return;
+        }
+
+        const opciones = panelSelect.querySelectorAll('mat-option');
+        let opcionLaPampa = null;
+
+        for (let opt of opciones) {
+            if (opt.textContent.trim().toUpperCase().includes('LA PAMPA')) {
+                opcionLaPampa = opt;
+                break;
+            }
+        }
+
+        if (opcionLaPampa) {
+            console.log("[Tampermonkey] Opción 'LA PAMPA' localizada. Seleccionando...");
+            opcionLaPampa.click();
+            await sleep(300);
+
+            const inputMatricula = componentePrescriptor.querySelector('mat-form-field.matricula input');
+            const inputRazonSocial = componentePrescriptor.querySelector('mat-form-field.razon_social input');
+
+            if (!inputMatricula || !inputRazonSocial) {
+                console.error("[Tampermonkey] No se encontraron los campos de texto para Matrícula o Razón Social.");
+                return;
+            }
+
+            console.log(`[Tampermonkey] Escribiendo Matrícula: ${medicoCodigo} y Razón Social: ${medicoNombre}`);
+            inputMatricula.focus();
+            escribirEnInput(inputMatricula, String(medicoCodigo).trim());
+
+            inputRazonSocial.focus();
+            escribirEnInput(inputRazonSocial, String(medicoNombre).trim());
+            inputRazonSocial.blur();
+            await sleep(300);
+
+            const botonBuscar = componentePrescriptor.querySelector('app-button.boton button, button[name="button"]');
+            if (!botonBuscar || botonBuscar.disabled) {
+                console.warn("[Tampermonkey] El botón 'BUSCAR PRESCRIPTOR' no está disponible o quedó deshabilitado.");
+                return;
+            }
+
+            console.log("[Tampermonkey] Presionando botón 'BUSCAR PRESCRIPTOR'...");
+            botonBuscar.click();
+
+            console.log("[Tampermonkey] Esperando tabla de resultados...");
+            let tablaMedicos = null;
+            for (let i = 0; i < 30; i++) {
+                tablaMedicos = componentePrescriptor.querySelector('mat-table');
+                if (tablaMedicos && tablaMedicos.querySelector('mat-row')) break;
+                await sleep(100);
+            }
+
+            if (!tablaMedicos) {
+                console.warn("[Tampermonkey] No apareció la tabla de resultados.");
+                return;
+            }
+
+            // Cantidad de filas
+            const filasMedicos = tablaMedicos.querySelectorAll('mat-row');
+            console.log(`[Tampermonkey] Filas encontradas: ${filasMedicos.length}`);
+
+            // Si hay EXACTAMENTE una sola opción, se selecciona
+            if (filasMedicos.length === 1) {
+                const filaUnica = filasMedicos[0];
+
+                const labelRadio = filaUnica.querySelector('label.mat-radio-label');
+                if (labelRadio) {
+                    console.log("[Tampermonkey] Clickeando el label del radio button...");
+                    labelRadio.click();
+                }
+            }
+        } else {
+            console.warn("[Tampermonkey] No se encontró la opción 'LA PAMPA'. Cancelando.");
+            const overlay = document.querySelector('.cdk-overlay-backdrop');
+            if (overlay) overlay.click();
+
+            const inputMatricula = componentePrescriptor.querySelector('mat-form-field.matricula input');
+            const inputRazonSocial = componentePrescriptor.querySelector('mat-form-field.razon_social input');
+            if (inputMatricula) escribirEnInput(inputMatricula, "");
+            if (inputRazonSocial) escribirEnInput(inputRazonSocial, "");
+        }
+
+        await sleep(400);
+    }
+
     async function cargarCodigosEnFormulario(listaCodigos) {
+        await automatizarEfectorYEspecialidad();
+        await sleep(200);
+
+        await automatizarMarcaGuardia();
+        await sleep(600);
+
         let codigosFallidos = [];
 
-        for (let i = 0; i < listaCodigos.length; i++) {
+         for (let i = 0; i < listaCodigos.length; i++) {
             const item = listaCodigos[i];
             const codigoFinal = formatearCodigoPrestacion(item.codigo);
             const cantidadFinal = item.repeticiones || 1;
@@ -125,16 +600,12 @@
                 break;
             }
 
-            // 1. Hacemos foco y escribimos el código formateado
             inputPrestacion.focus();
             escribirEnInput(inputPrestacion, codigoFinal);
 
-            // 2. Esperamos a que Angular despliegue el panel de opciones (mat-autocomplete)
-            // Revisamos el DOM durante un máximo de 3 segundos buscando el panel activo
             let panelOpciones = null;
             for (let intentos = 0; intentos < 30; intentos++) {
                 panelOpciones = document.querySelector('.mat-autocomplete-panel');
-                // Nos aseguramos de que el panel contenga opciones visibles
                 if (panelOpciones && panelOpciones.querySelector('mat-option')) {
                     break;
                 }
@@ -145,11 +616,10 @@
                 console.warn(`[Tampermonkey] No se desplegó el panel para: ${codigoFinal}`);
                 codigosFallidos.push(`${codigoFinal} (${item.nombre || 'Sin nombre'} - No desplegó opciones)`);
 
-                // Limpiamos de forma agresiva y cerramos el autocompletar huyendo del input
                 escribirEnInput(inputPrestacion, "");
                 inputPrestacion.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
                 inputPrestacion.blur();
-                await sleep(500); // Pausa para que Angular destruya el panel viejo
+                await sleep(500);
                 continue;
             }
 
@@ -158,18 +628,15 @@
 
             for (let opt of opciones) {
                 const textoOpcion = opt.textContent || "";
-                // Validamos si la opción contiene el número de código (ej: "600001 - ACTO BIOQUIMICO")
                 if (textoOpcion.includes(codigoFinal)) {
                     opcionEncontrada = opt;
                     break;
                 }
             }
 
-            // Si no encuentra una coincidencia exacta por número, elegimos la primera opción por defecto
             if (opcionEncontrada) {
                 opcionEncontrada.click();
 
-                // Esperamos que el input se limpie solo (confirmación de Angular)
                 let seLimpio = false;
                 for (let esperas = 0; esperas < 20; esperas++) {
                     if (inputPrestacion.value === "") {
@@ -193,29 +660,19 @@
                 }
 
             } else {
-                // CASO C: EL PANEL SE ABRIÓ, PERO EL CÓDIGO NO ESTÁ EN LA LISTA
                 console.warn(`[Tampermonkey] Código ${codigoFinal} no coincide con ninguna opción del panel.`);
                 codigosFallidos.push(`${codigoFinal} (${item.nombre || 'Sin nombre'} - No encontrado en la lista de opciones)`);
 
-                // Forzamos el cierre del panel mandando la tecla Escape al input y quitando el foco
                 escribirEnInput(inputPrestacion, "");
                 inputPrestacion.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
                 inputPrestacion.blur();
 
-                await sleep(600); // Tiempo clave para que el panel desaparezca físicamente del HTML
+                await sleep(600);
             }
 
-            // Pequeña pausa de cortesía antes de arrancar con el siguiente de la lista
             await sleep(500);
         }
-
-        if (codigosFallidos.length === 0) {
-            alert("¡Carga masiva finalizada con éxito! Se cargaron todos los códigos correctamente.");
-        } else {
-            // Te arma un reporte prolijo con saltos de línea mostrando los códigos huérfanos
-            const reporteErrores = codigosFallidos.join('\n• ');
-            alert(`Proceso finalizado, pero hubo problemas con algunos códigos:\n\n• ${reporteErrores}\n\nPor favor, cargalos manualmente.`);
-        }
+         mostrarModalErrores(codigosFallidos);
     }
 
     function miAccionPersonalizada(numeroAfiliado) {
@@ -230,6 +687,10 @@
                     try {
                         const jsonRespuesta = JSON.parse(response.responseText);
                         if (jsonRespuesta && jsonRespuesta.resultCodigos && jsonRespuesta.resultCodigos.length > 0) {
+                            datosMedicosTemporales.codigoDiagnostico = jsonRespuesta.diagnostico;
+                            datosMedicosTemporales.medicoCodigo = jsonRespuesta.medicoCodigo;
+                            datosMedicosTemporales.medicoNombre = jsonRespuesta.medicoNombre;
+
                             cargarCodigosEnFormulario(jsonRespuesta.resultCodigos);
                         } else {
                             alert("No se encontraron códigos pendientes para este afiliado.");
@@ -248,35 +709,46 @@
     }
 
     function extraerAfiliado(texto) {
-        // Busca "Credencial:" seguido de números y barras opcionales
         const match = texto.match(/Credencial:\s*([0-9\/]+)/i);
         if (match && match[1]) {
-            // Reemplazamos la barra "/" por un guion o la eliminamos si tu API la prefiere limpia.
-            // Actualmente la deja limpia (ej: "234934700") o podés cambiarlo según pida tu backend.
             return match[1].replace('/', '').trim();
         }
         return null;
     }
 
     function crearBotonEnAlerta(alertaElement) {
-        if (alertaElement.parentElement.querySelector('.mi-boton-alerta-sancor')) return;
-
         const textoCartel = alertaElement.textContent || "";
         const nroAfiliado = extraerAfiliado(textoCartel);
 
         if (!nroAfiliado) return;
 
+        // Buscamos si ya existe un botón inyectado previamente
+        const botonExistente = alertaElement.parentElement.querySelector('.mi-boton-alerta-sancor');
+
+        if (botonExistente) {
+            // SI EXISTE: Verificamos si tiene el número del paciente actual guardado en su atributo personalizado
+            if (botonExistente.getAttribute('data-afiliado') === nroAfiliado) {
+                // Si el número coincide, no hacemos nada (ya está bien dibujado)
+                return;
+            } else {
+                // SI NO COINCIDE (cambió el paciente): Borramos el botón viejo para poner el nuevo
+                console.log(`[Tampermonkey] Detectado cambio de paciente (${botonExistente.getAttribute('data-afiliado')} ➡️ ${nroAfiliado}). Actualizando botón...`);
+                botonExistente.remove();
+            }
+        }
+
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.innerText = `Cargar Prácticas de Afiliado ${nroAfiliado} ⚡`;
+        btn.innerText = `Cargar Datos y Códigos de Afiliado: ${nroAfiliado} ⏩`;
         btn.className = 'mi-boton-alerta-sancor';
 
-        // Estilos
+        btn.setAttribute('data-afiliado', nroAfiliado);
+
         btn.style.marginTop = '10px';
         btn.style.marginBottom = '10px';
         btn.style.marginLeft = '8px';
         btn.style.padding = '12px 24px';
-        btn.style.backgroundColor = '#17a2b8';
+        btn.style.backgroundColor = '#364962';
         btn.style.color = 'white';
         btn.style.border = 'none';
         btn.style.borderRadius = '8px';
@@ -284,6 +756,17 @@
         btn.style.fontWeight = 'bold';
         btn.style.boxShadow = '0px 4px 6px rgba(0,0,0,0.15)';
         btn.style.display = 'block';
+
+        const colorOriginal = '#364962';
+        const colorHover = '#666';
+
+        btn.addEventListener('mouseenter', () => {
+            btn.style.backgroundColor = colorHover;
+            btn.style.transition = 'background-color 0.2s ease';
+        });
+        btn.addEventListener('mouseleave', () => {
+            btn.style.backgroundColor = colorOriginal;
+        });
 
         btn.addEventListener('click', (e) => {
             e.preventDefault();
