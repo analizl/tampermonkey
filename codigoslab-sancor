@@ -17,7 +17,7 @@
     let datosMedicosTemporales = {
         codigoDiagnostico: null,
         medicoCodigo: null,
-        medicoNombre: null
+        medicoApellido: null
     };
 
     // Función auxiliar para pausar el script
@@ -189,11 +189,11 @@
                 await sleep(400);
             }
 
-            if (datosMedicosTemporales.medicoCodigo && datosMedicosTemporales.medicoNombre) {
-                await automatizarPrescriptor(datosMedicosTemporales.medicoCodigo, datosMedicosTemporales.medicoNombre);
+            if (datosMedicosTemporales.medicoCodigo && datosMedicosTemporales.medicoApellido) {
+                await automatizarPrescriptor(datosMedicosTemporales.medicoCodigo, datosMedicosTemporales.medicoApellido);
             }
 
-            datosMedicosTemporales = { codigoDiagnostico: null, medicoCodigo: null, medicoNombre: null };
+            datosMedicosTemporales = { codigoDiagnostico: null, medicoCodigo: null, medicoApellido: null };
         });
 
         body.appendChild(btnCerrar);
@@ -470,7 +470,7 @@
         await sleep(400);
     }
 
-    async function automatizarPrescriptor(medicoCodigo, medicoNombre) {
+    async function automatizarPrescriptor(medicoCodigo, medicoApellido) {
         console.log("[Tampermonkey] Configurando datos del médico prescriptor...");
 
         const componentePrescriptor = document.querySelector('app-prescriptor');
@@ -522,12 +522,12 @@
                 return;
             }
 
-            console.log(`[Tampermonkey] Escribiendo Matrícula: ${medicoCodigo} y Razón Social: ${medicoNombre}`);
+            console.log(`[Tampermonkey] Escribiendo Matrícula: ${medicoCodigo} y Razón Social: ${medicoApellido}`);
             inputMatricula.focus();
             escribirEnInput(inputMatricula, String(medicoCodigo).trim());
 
             inputRazonSocial.focus();
-            escribirEnInput(inputRazonSocial, String(medicoNombre).trim());
+            escribirEnInput(inputRazonSocial, String(medicoApellido).trim());
             inputRazonSocial.blur();
             await sleep(300);
 
@@ -691,7 +691,7 @@
                         if (jsonRespuesta && jsonRespuesta.resultCodigos && jsonRespuesta.resultCodigos.length > 0) {
                             datosMedicosTemporales.codigoDiagnostico = jsonRespuesta.diagnostico;
                             datosMedicosTemporales.medicoCodigo = jsonRespuesta.medicoCodigo;
-                            datosMedicosTemporales.medicoNombre = jsonRespuesta.medicoNombre;
+                            datosMedicosTemporales.medicoApellido = jsonRespuesta.medicoApellido;
 
                             cargarCodigosEnFormulario(jsonRespuesta.resultCodigos);
                         } else {
