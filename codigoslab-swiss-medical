@@ -7,6 +7,7 @@
 // @match        https://www.swissmedical.com.ar/prestadores/*
 // @grant        GM_xmlhttpRequest
 // @connect      srapp.diagnosis.com.ar
+// @connect      localhost
 // @run-at       document-end
 // ==/UserScript==
 
@@ -42,29 +43,35 @@
         return texto.replace(/\s+/g, ' ').trim();
     }
 
+    let nombrePacienteActual = "";
+    let idAfiliadoActual = "";
+
     async function escribirEnInputReact(inputElement, valor) {
         inputElement.focus();
 
         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
         setter.call(inputElement, '');
         inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-        await sleep(100);
+        await sleep(400);
 
-        for (let i = 0; i < valor.length; i++) {
-            const char = valor[i];
-            const valorAcumulado = valor.substring(0, i + 1);
-            setter.call(inputElement, valorAcumulado);
+        setter.call(inputElement, valor);
+        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
 
-            inputElement.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: char }));
-            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-            inputElement.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: char }));
-            inputElement.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: char }));
+//         for (let i = 0; i < valor.length; i++) {
+//             const char = valor[i];
+//             const valorAcumulado = valor.substring(0, i + 1);
+//             setter.call(inputElement, valorAcumulado);
 
-            await sleep(50);
-        }
+//             inputElement.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: char }));
+//             inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+//             inputElement.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: char }));
+//             inputElement.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: char }));
+
+//             await sleep(50);
+//         }
 
         inputElement.dispatchEvent(new Event('change', { bubbles: true }));
-        await sleep(200);
+        await sleep(400);
     }
 
     async function cargarDiagnostico(diagDescripcion) {
@@ -194,7 +201,7 @@
 
         // Encabezado
         const header = document.createElement('div');
-        const todoOk = codigosFallidos.length === 0;
+        const todoOk = codigosFallidos.length === 0
         header.style.backgroundColor = todoOk ? '#28a745' : '#dc3545';
         header.style.color = 'white';
         header.style.padding = '16px 20px';
@@ -338,7 +345,7 @@
                 inputCodigo.focus();
                 inputCodigo.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
                 inputCodigo.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-                await sleep(600);
+                await sleep(800);
 
                 const tipoOriginalCodigo = inputCodigo.type;
                 inputCodigo.type = 'text';
@@ -355,12 +362,10 @@
                 if (inputCodigo.value === "" || !inputCodigo.value) {
                      throw new Error("El código no existe en la base de datos de Swiss Medical.");
                 }
-
-                // Alternativa por descripción: si tenés un input llamado 'prestacionDescripcion', podés usar esto:
-//                 const inputDesc = document.querySelector('input[name="prestacionDescripcion"]') || document.querySelector('input[name*="Descripcion"]');
-//                 if (inputDesc && (!inputDesc.value || inputDesc.value.trim() === "")) {
-//                      throw new Error("Código inexistente (Descripción vacía).");
-//                 }
+                const inputDesc = document.querySelector('input[name="prestacionDescripcion"]') || document.querySelector('input[name*="Descripcion"]');
+                if (inputDesc && (!inputDesc.value || inputDesc.value.trim() === "")) {
+                     throw new Error("Código inexistente (Descripción vacía).");
+                }
 
                 const tipoOriginalCantidad = inputCantidad.type;
                 inputCantidad.type = 'text';
@@ -390,13 +395,13 @@
                 prestacionFallidas.push(`${codigoFinal} (${item.nombre || 'Sin nombre'} - No encontrado en la lista de opciones)`);
             }
         }
-
         mostrarModalErrores(prestacionFallidas);
     }
 
-    function miAccionPersonalizada(numeroAfiliado) {
-        const urlApi = `https://srapp.diagnosis.com.ar/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138`;
-
+    function miAccionPersonalizada(numeroAfiliado, apellidoAfiliado) {
+        //const urlApi = `http://localhost:8001/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138`;
+        const urlApi = `http://localhost:8001/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138&apellido=${apellidoAfiliado}`;
+        //const urlApi = `https://srapp.diagnosis.com.ar/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138`;
         GM_xmlhttpRequest({
             method: "GET",
             url: urlApi,
@@ -414,7 +419,7 @@
                         console.error("[Tampermonkey] Error JSON:", e);
                     }
                 } else {
-                    alert("Error en la API. Status: " + response.status);
+                    alert("Error en la API. Status: " + response.status, response);
                 }
             },
             onerror: function() {
@@ -443,15 +448,23 @@
 
     function dibujarBotonCarga(nodoReferencia, nroAfiliado) {
         const botonExistente = nodoReferencia.parentElement.querySelector('.mi-boton-alerta-swiss');
-
         if (botonExistente) {
-            if (botonExistente.getAttribute('data-afiliado') === nroAfiliado) return;
             botonExistente.remove();
         }
+//         if (botonExistente) {
+//             if (botonExistente.getAttribute('data-afiliado') === nroAfiliado) return;
+//             botonExistente.remove();
+//         }
+
+        const spanNombre = document.querySelector('[data-test-id="affilatedName"]');
+        const tieneNombreReal = spanNombre && spanNombre.innerText.trim() !== "";
+        const nombreDetectado = tieneNombreReal ? spanNombre.innerText.trim() : `${nroAfiliado}`;
+
+        const apellidoAfiliado = nombreDetectado.split(',')[0]
 
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.innerText = `Cargar Códigos Diagnosis ⏩ (Afiliado: ${nroAfiliado})`;
+        btn.innerText = `Cargar Códigos Diagnosis ⏩ (Afiliado: ${nombreDetectado})`;
         btn.className = 'mi-boton-alerta-swiss';
         btn.setAttribute('data-afiliado', nroAfiliado);
 
@@ -474,7 +487,7 @@
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            miAccionPersonalizada(nroAfiliado);
+            miAccionPersonalizada(nroAfiliado, apellidoAfiliado);
         });
 
         nodoReferencia.after(btn);
@@ -486,7 +499,8 @@
 
         if (inputAfiliado && inputAfiliado.value) {
             const prefijo = prefijoElement ? prefijoElement.textContent.trim() : "";
-            return `${(prefijo + inputAfiliado.value).replace(/\s+/g, '')}1000`;
+            return `${(prefijo + inputAfiliado.value).replace(/\s+/g, '')}`;
+            //return `${(prefijo + inputAfiliado.value).replace(/\s+/g, '')}1000`;
         }
         return null;
     }
