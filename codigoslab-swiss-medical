@@ -1,0 +1,511 @@
+// ==UserScript==
+// @name         Códigos Laboratorio - SWISS MEDICAL
+// @namespace    http://tampermonkey.net/
+// @version      3.0
+// @description  Carga automática códigos Laboratorio Swiss Medical desde Diagnosis
+// @author       Diagnosis
+// @match        https://www.swissmedical.com.ar/prestadores/*
+// @grant        GM_xmlhttpRequest
+// @connect      srapp.diagnosis.com.ar
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    function formatearCodigoPrestacion(codigoCrudo) {
+        let limpio = String(codigoCrudo).trim();
+        if (limpio.length === 6) {
+            return limpio;
+        }
+        return '66' + limpio.padStart(4, '0');
+    }
+
+    function limpiarTextoParaBuscador(textoCrudo) {
+        if (!textoCrudo) return "";
+
+        let texto = String(textoCrudo);
+
+        texto = texto.replace(/¢/g, 'o'); // ó -> o
+        texto = texto.replace(/\u0082/g, 'e'); // é -> e
+        texto = texto.replace(/\u00a1/g, 'i'); // í -> i
+        texto = texto.replace(/£/g, 'u'); // ú -> u
+        texto = texto.replace(/¥/g, 'n'); // ñ -> n
+
+
+        texto = texto.replace(/\u00a0/g, 'a');
+
+        texto = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+        return texto.replace(/\s+/g, ' ').trim();
+    }
+
+    async function escribirEnInputReact(inputElement, valor) {
+        inputElement.focus();
+
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(inputElement, '');
+        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(100);
+
+        for (let i = 0; i < valor.length; i++) {
+            const char = valor[i];
+            const valorAcumulado = valor.substring(0, i + 1);
+            setter.call(inputElement, valorAcumulado);
+
+            inputElement.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: char }));
+            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+            inputElement.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: char }));
+            inputElement.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: char }));
+
+            await sleep(50);
+        }
+
+        inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+        await sleep(200);
+    }
+
+    async function cargarDiagnostico(diagDescripcion) {
+        if (!diagDescripcion) {
+            return;
+        }
+
+        const descripcionLimpia = limpiarTextoParaBuscador(diagDescripcion).toUpperCase().trim();
+
+        const inputDiag = document.querySelector('input[name="diagnosticoDescripcion"]');
+
+        if (!inputDiag) {
+            console.error("[Tampermonkey] No se encontró el input de diagnóstico descripción.");
+            return;
+        }
+
+        await escribirEnInputReact(inputDiag, descripcionLimpia);
+        await sleep(1000);
+
+        const sugerencias = Array.from(document.querySelectorAll('div[name^="diagnosis-description-"]'));
+
+        if (sugerencias.length === 1) {
+            sugerencias[0].click();
+            await sleep(500);
+        }
+        else if (sugerencias.length > 1) {
+
+            const coincidenciaExacta = sugerencias.find(elemento => {
+                const textoOpcion = limpiarTextoParaBuscador(elemento.innerText).toUpperCase().trim();
+                return textoOpcion === descripcionLimpia;
+            });
+
+            if (coincidenciaExacta) {
+                coincidenciaExacta.click();
+                await sleep(500);
+            } else {
+            }
+        } else {
+            inputDiag.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'ArrowDown', keyCode: 40 }));
+            await sleep(200);
+            inputDiag.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', keyCode: 13 }));
+        }
+    }
+
+    async function cargarMedicoPrescriptor(medicoCodigo) {
+        let radioInput = null;
+        let intentos = 0;
+
+        while (!radioInput && intentos < 20) {
+            radioInput = document.getElementById('tipoMatriculaProvincial');
+            if (!radioInput) {
+                await sleep(200);
+                intentos++;
+            }
+        }
+
+        if (!radioInput) {
+            console.error("[Tampermonkey] ERROR: El radio button Provincial no apareció en la pantalla tras esperar.");
+            return;
+        }
+
+        await sleep(300);
+
+        radioInput.click();
+        radioInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+        await sleep(600);
+
+        const inputMatricula = document.querySelector('input[name="matriculaPrescriptor"]');
+        if (inputMatricula && medicoCodigo) {
+            inputMatricula.focus();
+
+            const tipoOriginal = inputMatricula.type;
+            inputMatricula.type = 'text';
+
+            const setterMatricula = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            setterMatricula.call(inputMatricula, String(medicoCodigo));
+            inputMatricula.dispatchEvent(new Event('input', { bubbles: true }));
+            inputMatricula.dispatchEvent(new Event('change', { bubbles: true }));
+
+            inputMatricula.type = tipoOriginal;
+            await sleep(400);
+        }
+
+        const selectProvincia = document.querySelector('select[name="provinciaMatriculaPrescriptor"]');
+        if (selectProvincia) {
+            selectProvincia.focus();
+            selectProvincia.value = 'L';
+            selectProvincia.dispatchEvent(new Event('change', { bubbles: true }));
+            await sleep(300);
+        } else {
+            const selectAlternativo = document.querySelector('select[name*="provincia"]');
+            if (selectAlternativo) {
+                selectAlternativo.value = 'L';
+                selectAlternativo.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+    }
+
+    function mostrarModalErrores(codigosFallidos) {
+        const modalViejo = document.getElementById('tm-modal-error-container');
+        if (modalViejo) modalViejo.remove();
+
+        // Contenedor principal
+        const contenedor = document.createElement('div');
+        contenedor.id = 'tm-modal-error-container';
+        contenedor.style.position = 'fixed';
+        contenedor.style.top = '0';
+        contenedor.style.left = '0';
+        contenedor.style.width = '100vw';
+        contenedor.style.height = '100vh';
+        contenedor.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        contenedor.style.display = 'flex';
+        contenedor.style.justifyContent = 'center';
+        contenedor.style.alignItems = 'center';
+        contenedor.style.zIndex = '99999';
+        contenedor.style.fontFamily = 'Roboto, "Helvetica Neue", sans-serif';
+
+        // Caja del Modal
+        const modal = document.createElement('div');
+        modal.style.backgroundColor = '#ffffff';
+        modal.style.width = '480px';
+        modal.style.maxWidth = '90%';
+        modal.style.borderRadius = '12px';
+        modal.style.boxShadow = '0px 8px 24px rgba(0,0,0,0.3)';
+        modal.style.overflow = 'hidden';
+
+        // Encabezado
+        const header = document.createElement('div');
+        const todoOk = codigosFallidos.length === 0;
+        header.style.backgroundColor = todoOk ? '#28a745' : '#dc3545';
+        header.style.color = 'white';
+        header.style.padding = '16px 20px';
+        header.style.fontWeight = 'bold';
+        header.style.fontSize = '18px';
+        header.innerText = todoOk ? '¡Proceso Exitoso! 🎉' : '⚠️ Códigos no cargados';
+
+        // Cuerpo del modal
+        const body = document.createElement('div');
+        body.style.padding = '20px';
+        body.style.color = '#333333';
+        body.style.fontSize = '14px';
+        body.style.lineHeight = '1.5';
+
+        if (todoOk) {
+            body.innerHTML = '<p style="margin:0; font-size: 15px; text-align:center;">Se procesaron y cargaron todas las prestaciones con éxito en Swiss Medical.</p>';
+        } else {
+            body.innerHTML = '<p style="margin:0 0 12px 0; font-weight: 500;">Las siguientes prestaciones no se pudieron auto-completar automáticamente:</p>';
+
+            // Lista de códigos
+            const ul = document.createElement('ul');
+            ul.style.margin = '0 0 20px 0';
+            ul.style.paddingLeft = '20px';
+            ul.style.maxHeight = '180px';
+            ul.style.overflowY = 'auto';
+            ul.style.border = '1px solid #eeeeee';
+            ul.style.paddingTop = '8px';
+            ul.style.paddingBottom = '8px';
+            ul.style.borderRadius = '6px';
+            ul.style.backgroundColor = '#f9f9f9';
+
+            codigosFallidos.forEach(err => {
+                const li = document.createElement('li');
+                li.style.marginBottom = '6px';
+                li.style.color = '#555555';
+                li.innerHTML = `<strong>${err}</strong>`;
+                ul.appendChild(li);
+            });
+            body.appendChild(ul);
+
+            // Botón de Copiar al Portapapeles
+            const btnCopiar = document.createElement('button');
+            btnCopiar.type = 'button';
+            btnCopiar.innerText = '📋 Copiar códigos fallidos';
+            btnCopiar.style.width = '100%';
+            btnCopiar.style.marginBottom = '10px';
+            btnCopiar.style.padding = '10px';
+            btnCopiar.style.backgroundColor = '#6c757d';
+            btnCopiar.style.color = 'white';
+            btnCopiar.style.border = 'none';
+            btnCopiar.style.borderRadius = '6px';
+            btnCopiar.style.cursor = 'pointer';
+            btnCopiar.style.fontWeight = '500';
+
+            btnCopiar.addEventListener('click', () => {
+                const textoACopiar = codigosFallidos.join('\n');
+                const campoTemporal = document.createElement('textarea');
+                campoTemporal.value = textoACopiar;
+                campoTemporal.style.position = 'fixed';
+                campoTemporal.style.opacity = '0';
+                document.body.appendChild(campoTemporal);
+                campoTemporal.focus();
+                campoTemporal.select();
+
+                try {
+                    const exito = document.execCommand('copy');
+                    if (exito) {
+                        btnCopiar.innerText = '✅ ¡Copiado!';
+                        btnCopiar.style.backgroundColor = '#28a745';
+                    } else {
+                        btnCopiar.innerText = '❌ Error al copiar';
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
+
+                document.body.removeChild(campoTemporal);
+                setTimeout(() => {
+                    btnCopiar.innerText = '📋 Copiar códigos fallidos';
+                    btnCopiar.style.backgroundColor = '#6c757d';
+                }, 2000);
+            });
+            body.appendChild(btnCopiar);
+        }
+
+        // Botón Cerrar
+        const btnCerrar = document.createElement('button');
+        btnCerrar.type = 'button';
+        btnCerrar.innerText = 'Entendido';
+        btnCerrar.style.width = '100%';
+        btnCerrar.style.padding = '10px';
+        btnCerrar.style.backgroundColor = '#007bff';
+        btnCerrar.style.color = 'white';
+        btnCerrar.style.border = 'none';
+        btnCerrar.style.borderRadius = '6px';
+        btnCerrar.style.cursor = 'pointer';
+        btnCerrar.style.fontWeight = 'bold';
+
+        btnCerrar.addEventListener('click', async () => {
+            document.body.removeChild(contenedor);
+        });
+
+        body.appendChild(btnCerrar);
+        modal.appendChild(header);
+        modal.appendChild(body);
+        contenedor.appendChild(modal);
+        document.body.appendChild(contenedor);
+    }
+
+    // CICLO PRINCIPAL DE CARGA
+    async function cargarCodigosEnFormulario(listaCodigos) {
+        console.log("[Tampermonkey] Iniciando carga de prestaciones...");
+
+        let prestacionFallidas = [];
+
+        for (let i = 0; i < listaCodigos.length; i++) {
+            const item = listaCodigos[i];
+            const codigoFinal = formatearCodigoPrestacion(item.codigo);
+            const cantidadFinal = item.repeticiones || 1;
+
+            try {
+                const inputCodigo = document.querySelector('input[name="prestacionCodigo"]');
+                const inputCantidad = document.querySelector('input[name="prestacionCantidad"]');
+
+                if (!inputCodigo || !inputCantidad) {
+                    throw new Error("No se localizaron los inputs de prestación en el DOM.");
+                }
+
+                // se escribe el codigo
+                inputCodigo.focus();
+                await escribirEnInputReact(inputCodigo, codigoFinal);
+                await sleep(200);
+
+                // blur y click afuera
+                inputCodigo.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+                inputCodigo.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+                document.body.click();
+                await sleep(800);
+
+                // volvemos a enfocar
+                inputCodigo.focus();
+                inputCodigo.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+                inputCodigo.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+                await sleep(600);
+
+                const tipoOriginalCodigo = inputCodigo.type;
+                inputCodigo.type = 'text';
+                await sleep(50);
+
+                inputCodigo.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'ArrowDown', keyCode: 40 }));
+                await sleep(200);
+                inputCodigo.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', keyCode: 13 }));
+                await sleep(400);
+
+                inputCodigo.type = tipoOriginalCodigo;
+                await sleep(400);
+
+                if (inputCodigo.value === "" || !inputCodigo.value) {
+                     throw new Error("El código no existe en la base de datos de Swiss Medical.");
+                }
+
+                // Alternativa por descripción: si tenés un input llamado 'prestacionDescripcion', podés usar esto:
+//                 const inputDesc = document.querySelector('input[name="prestacionDescripcion"]') || document.querySelector('input[name*="Descripcion"]');
+//                 if (inputDesc && (!inputDesc.value || inputDesc.value.trim() === "")) {
+//                      throw new Error("Código inexistente (Descripción vacía).");
+//                 }
+
+                const tipoOriginalCantidad = inputCantidad.type;
+                inputCantidad.type = 'text';
+                await sleep(50);
+
+                inputCantidad.focus();
+                const setterCantidad = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                setterCantidad.call(inputCantidad, String(cantidadFinal));
+                inputCantidad.dispatchEvent(new Event('input', { bubbles: true }));
+                inputCantidad.dispatchEvent(new Event('change', { bubbles: true }));
+
+                inputCantidad.type = tipoOriginalCantidad;
+                await sleep(400);
+
+                const botonAgregar = Array.from(document.querySelectorAll('button'))
+                                          .find(btn => btn.textContent.trim() === '+');
+
+                if (botonAgregar) {
+                    botonAgregar.click();
+                    await sleep(1200);
+                } else {
+                    throw new Error("No se encontró el botón '+' para añadir a la grilla.");
+                }
+
+            } catch (error) {
+                console.error(`[Tampermonkey] ❌ Error con código ${codigoFinal}:`, error.message);
+                prestacionFallidas.push(`${codigoFinal} (${item.nombre || 'Sin nombre'} - No encontrado en la lista de opciones)`);
+            }
+        }
+
+        mostrarModalErrores(prestacionFallidas);
+    }
+
+    function miAccionPersonalizada(numeroAfiliado) {
+        const urlApi = `https://srapp.diagnosis.com.ar/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138`;
+
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: urlApi,
+            headers: { "Content-Type": "application/json" },
+            onload: function(response) {
+                if (response.status === 200) {
+                    try {
+                        const jsonRespuesta = JSON.parse(response.responseText);
+                        if (jsonRespuesta && jsonRespuesta.resultCodigos && jsonRespuesta.resultCodigos.length > 0) {
+                            iniciarCargaCompleta(jsonRespuesta);
+                        } else {
+                            alert("No se encontraron códigos pendientes para este afiliado.");
+                        }
+                    } catch (e) {
+                        console.error("[Tampermonkey] Error JSON:", e);
+                    }
+                } else {
+                    alert("Error en la API. Status: " + response.status);
+                }
+            },
+            onerror: function() {
+                alert("Error de red con el servidor de Diagnosis.");
+            }
+        });
+    }
+
+    async function iniciarCargaCompleta(jsonRespuesta) {
+        const medicoCod = jsonRespuesta.medicoCodigo || (jsonRespuesta.resultCodigos && jsonRespuesta.resultCodigos[0]?.medicoCodigo);
+        if (medicoCod) {
+            await cargarMedicoPrescriptor(medicoCod);
+            await sleep(500);
+        }
+
+        // carga de diagnostico
+        if (jsonRespuesta.diagDescripcion) {
+            await cargarDiagnostico(jsonRespuesta.diagDescripcion);
+            await sleep(1000);
+        }
+
+        // carga de códigos
+        const listaCodigos = jsonRespuesta.resultCodigos || [];
+        await cargarCodigosEnFormulario(listaCodigos);
+    }
+
+    function dibujarBotonCarga(nodoReferencia, nroAfiliado) {
+        const botonExistente = nodoReferencia.parentElement.querySelector('.mi-boton-alerta-swiss');
+
+        if (botonExistente) {
+            if (botonExistente.getAttribute('data-afiliado') === nroAfiliado) return;
+            botonExistente.remove();
+        }
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.innerText = `Cargar Códigos Diagnosis ⏩ (Afiliado: ${nroAfiliado})`;
+        btn.className = 'mi-boton-alerta-swiss';
+        btn.setAttribute('data-afiliado', nroAfiliado);
+
+        btn.style.marginTop = '15px';
+        btn.style.padding = '12px 24px';
+        btn.style.backgroundColor = '#e4002b';
+        btn.style.color = 'white';
+        btn.style.border = 'none';
+        btn.style.borderRadius = '6px';
+        btn.style.cursor = 'pointer';
+        btn.style.fontWeight = 'bold';
+        btn.style.fontSize = '14px';
+        btn.style.boxShadow = '0px 4px 6px rgba(0,0,0,0.15)';
+        btn.style.display = 'block';
+        btn.style.transition = 'background-color 0.2s';
+
+        btn.addEventListener('mouseenter', () => btn.style.backgroundColor = '#b30021');
+        btn.addEventListener('mouseleave', () => btn.style.backgroundColor = '#e4002b');
+
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            miAccionPersonalizada(nroAfiliado);
+        });
+
+        nodoReferencia.after(btn);
+    }
+
+    function obtenerNumeroAfiliado() {
+        const prefijoElement = document.querySelector('.validateMember_validateMember__inputContainer__e8yxc span.text-muted');
+        const inputAfiliado = document.getElementById('affiliateNumber');
+
+        if (inputAfiliado && inputAfiliado.value) {
+            const prefijo = prefijoElement ? prefijoElement.textContent.trim() : "";
+            return `${(prefijo + inputAfiliado.value).replace(/\s+/g, '')}1000`;
+        }
+        return null;
+    }
+
+    // RASTREADOR DE DIRECCIÓN SELECCIONADA
+    setInterval(() => {
+        const selectDireccion = document.querySelector('select[data-test-id="select-address"]');
+        if (selectDireccion) {
+            if (selectDireccion.value !== "") {
+                const nroAfiliado = obtenerNumeroAfiliado();
+                if (nroAfiliado) {
+                    const contenedorDireccion = selectDireccion.parentElement;
+                    dibujarBotonCarga(contenedorDireccion, nroAfiliado);
+                }
+            } else {
+                const botonExistente = document.querySelector('.mi-boton-alerta-swiss');
+                if (botonExistente) botonExistente.remove();
+            }
+        }
+    }, 1000);
+
+})();
