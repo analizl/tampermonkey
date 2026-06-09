@@ -54,21 +54,18 @@
         inputElement.dispatchEvent(new Event('input', { bubbles: true }));
         await sleep(400);
 
-        setter.call(inputElement, valor);
-        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+        for (let i = 0; i < valor.length; i++) {
+            const char = valor[i];
+            const valorAcumulado = valor.substring(0, i + 1);
+            setter.call(inputElement, valorAcumulado);
 
-//         for (let i = 0; i < valor.length; i++) {
-//             const char = valor[i];
-//             const valorAcumulado = valor.substring(0, i + 1);
-//             setter.call(inputElement, valorAcumulado);
+            inputElement.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: char }));
+            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+            inputElement.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: char }));
+            inputElement.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: char }));
 
-//             inputElement.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: char }));
-//             inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-//             inputElement.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, key: char }));
-//             inputElement.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: char }));
-
-//             await sleep(50);
-//         }
+            await sleep(50);
+        }
 
         inputElement.dispatchEvent(new Event('change', { bubbles: true }));
         await sleep(400);
@@ -330,37 +327,54 @@
                     throw new Error("No se localizaron los inputs de prestación en el DOM.");
                 }
 
-                // se escribe el codigo
+                // limpieza del input
                 inputCodigo.focus();
+                const setterCodigo = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                setterCodigo.call(inputCodigo, '');
+                inputCodigo.dispatchEvent(new Event('input', { bubbles: true }));
+                await sleep(200);
+
+                // se escribe el codigo nuevo
                 await escribirEnInputReact(inputCodigo, codigoFinal);
                 await sleep(200);
 
-                // blur y click afuera
+                // blur
                 inputCodigo.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
                 inputCodigo.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
                 document.body.click();
-                await sleep(800);
+                await sleep(500);
 
-                // volvemos a enfocar
+                // se vuelve al input para que aparezcan las opciones
                 inputCodigo.focus();
                 inputCodigo.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
                 inputCodigo.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-                await sleep(800);
+                await sleep(300);
 
-                const tipoOriginalCodigo = inputCodigo.type;
-                inputCodigo.type = 'text';
-                await sleep(50);
+                let opcionDesplegable = null;
+                for (let intento = 0; intento < 20; intento++) {
+                    const divsConCursor = Array.from(document.querySelectorAll('div'))
+                        .filter(div => div.style.cursor === 'pointer' || div.getAttribute('style')?.includes('cursor: pointer'));
 
-                inputCodigo.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'ArrowDown', keyCode: 40 }));
-                await sleep(200);
-                inputCodigo.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', keyCode: 13 }));
-                await sleep(400);
+                    opcionDesplegable = divsConCursor.find(div => div.textContent.includes(codigoFinal));
 
-                inputCodigo.type = tipoOriginalCodigo;
-                await sleep(400);
+                    if (opcionDesplegable) {
+                        break;
+                    }
+                    await sleep(150);
+                }
+
+                if (opcionDesplegable) {
+                    console.log(`[Tampermonkey] Seleccionando opción flotante para: ${codigoFinal}`);
+                    opcionDesplegable.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                    opcionDesplegable.click();
+                    opcionDesplegable.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                    await sleep(400);
+                } else {
+                    throw new Error("El menú de opciones de Swiss Medical no apareció a tiempo para este código.");
+                }
 
                 if (inputCodigo.value === "" || !inputCodigo.value) {
-                     throw new Error("El código no existe en la base de datos de Swiss Medical.");
+                     throw new Error("El código no quedó seleccionado en el input.");
                 }
                 const inputDesc = document.querySelector('input[name="prestacionDescripcion"]') || document.querySelector('input[name*="Descripcion"]');
                 if (inputDesc && (!inputDesc.value || inputDesc.value.trim() === "")) {
@@ -385,23 +399,31 @@
 
                 if (botonAgregar) {
                     botonAgregar.click();
-                    await sleep(1200);
+                    await sleep(1500);
                 } else {
                     throw new Error("No se encontró el botón '+' para añadir a la grilla.");
                 }
 
             } catch (error) {
                 console.error(`[Tampermonkey] ❌ Error con código ${codigoFinal}:`, error.message);
-                prestacionFallidas.push(`${codigoFinal} (${item.nombre || 'Sin nombre'} - No encontrado en la lista de opciones)`);
+                prestacionFallidas.push(`${codigoFinal} (${item.nombre || 'Sin nombre'} - ${error.message})`);
+
+                try {
+                    const inputCodigo = document.querySelector('input[name="prestacionCodigo"]');
+                    if(inputCodigo) {
+                        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(inputCodigo, '');
+                        inputCodigo.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                } catch(e){}
+                await sleep(800);
             }
         }
         mostrarModalErrores(prestacionFallidas);
     }
 
     function miAccionPersonalizada(numeroAfiliado, apellidoAfiliado) {
-        //const urlApi = `http://localhost:8001/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138`;
-        const urlApi = `http://localhost:8001/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138&apellido=${apellidoAfiliado}`;
-        //const urlApi = `https://srapp.diagnosis.com.ar/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138`;
+        //const urlApi = `http://localhost:8001/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138&apellido=${apellidoAfiliado}`;
+        const urlApi = `https://srapp.diagnosis.com.ar/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138&apellido=${apellidoAfiliado}`;
         GM_xmlhttpRequest({
             method: "GET",
             url: urlApi,
