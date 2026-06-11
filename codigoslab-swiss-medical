@@ -441,7 +441,18 @@
                         console.error("[Tampermonkey] Error JSON:", e);
                     }
                 } else {
-                    alert("Error en la API. Status: " + response.status, response);
+                    //alert("Error en la API. Status: " + response.status, response);
+                    try {
+                        const jsonError = JSON.parse(response.responseText);
+
+                        if (jsonError && jsonError.error) {
+                            alert("Error: " + jsonError.error);
+                        } else {
+                            alert("Verifique que tiene la sesión del DWEB iniciada \nError del servidor: " + response.status);
+                        }
+                    } catch (e) {
+                        alert("Error " + response.status + ": " + response.statusText);
+                    }
                 }
             },
             onerror: function() {
@@ -486,7 +497,7 @@
 
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.innerText = `Cargar Códigos Diagnosis ⏩ (Afiliado: ${nombreDetectado})`;
+        btn.innerText = `Cargar Datos y Códigos de Afiliado: ${nombreDetectado} ⏩`;
         btn.className = 'mi-boton-alerta-swiss';
         btn.setAttribute('data-afiliado', nroAfiliado);
 
