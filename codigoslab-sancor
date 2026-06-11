@@ -701,7 +701,17 @@
                         console.error("[Tampermonkey] Error de parseo JSON:", e);
                     }
                 } else {
-                    alert("Error en la API. Status: " + response.status);
+                    try {
+                        const jsonError = JSON.parse(response.responseText);
+
+                        if (jsonError && jsonError.error) {
+                            alert("Error: " + jsonError.error);
+                        } else {
+                            alert("Error del servidor: " + response.status);
+                        }
+                    } catch (e) {
+                        alert("Error " + response.status + ": " + response.statusText);
+                    }
                 }
             },
             onerror: function() {
