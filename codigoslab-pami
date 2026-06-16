@@ -1,0 +1,227 @@
+// ==UserScript==
+// @name         Codigos Laboratorio - PAMI
+// @namespace    http://tampermonkey.net/
+// @version      1.0
+// @description  Carga automática códigos Laboratorio PAMI
+// @author       You
+// @match        https://biosoft-online.com.ar:60443/pamilapampa/frm_solicita_autorizacion.aspx
+// @grant        GM_xmlhttpRequest
+// @connect      localhost
+// @connect      srapp.diagnosis.com.ar
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    let codigosCargadosGlobal = [];
+
+    let datosMedicosTemporales = {
+        codigoDiagnostico: null,
+        medicoCodigo: null,
+        medicoApellido: null,
+        paciente: null,
+    };
+
+    function dibujarBotonesTandas() {
+        const contenedor = document.getElementById('contenedor-botones-pami');
+        if (!contenedor) return;
+
+        const tandasViejas = contenedor.querySelectorAll('.btn-tanda');
+        tandasViejas.forEach(b => b.remove());
+        contenedor.querySelector('.nombre-afiliado')?.remove();
+
+        const tamañoTanda = 15;
+        const totalCodigos = codigosCargadosGlobal.length;
+        const cantidadTandas = Math.ceil(totalCodigos / tamañoTanda);
+
+        if (datosMedicosTemporales.paciente?.hisnom) {
+            const paciente = document.createElement('p');
+            paciente.textContent = `Paciente: ${datosMedicosTemporales.paciente.hisnom}`;
+            paciente.className = 'nombre-afiliado';
+            paciente.style.margin = '5px 0';
+            paciente.style.fontWeight = 'bold';
+            paciente.style.color = '#333';
+            contenedor.appendChild(paciente);
+        }
+
+        for (let i = 0; i < cantidadTandas; i++) {
+            const botonTanda = document.createElement('button');
+            botonTanda.type = 'button';
+            botonTanda.className = 'btn-tanda';
+            botonTanda.innerText = `📋 Cargar Tanda ${i + 1}`;
+            botonTanda.style.marginRight = '5px';
+            botonTanda.style.marginTop = '5px';
+            botonTanda.style.cursor = 'pointer';
+            botonTanda.style.padding = '3px 10px';
+            botonTanda.style.fontWeight = 'bold';
+            botonTanda.style.backgroundColor = '#28a745';
+            botonTanda.style.color = 'white';
+            botonTanda.style.border = 'none';
+            botonTanda.style.borderRadius = '3px';
+
+            botonTanda.addEventListener('click', (e) => {
+                e.preventDefault();
+
+                const inicio = i * tamañoTanda;
+                const fin = inicio + tamañoTanda;
+                const codigosDeEstaTanda = codigosCargadosGlobal.slice(inicio, fin);
+
+                inyectarCodigosEnFormulario(codigosDeEstaTanda);
+            });
+
+            contenedor.appendChild(botonTanda);
+        }
+    }
+
+    function inyectarCodigosEnFormulario(listaCodigos) {
+        for (let i = 1; i <= 15; i++) {
+            const input = document.getElementById(`Main_CodPres${i}`);
+            if (input) input.value = "";
+        }
+
+        listaCodigos.forEach((item, index) => {
+            const inputId = `Main_CodPres${index + 1}`;
+            const input = document.getElementById(inputId);
+            if (input) {
+                input.value = item.codigo;
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+
+        console.log(`[Tampermonkey] Se inyectaron ${listaCodigos.length} códigos en el formulario.`);
+    }
+
+    function buscarCodigosAfiliadoDiagnosis(numeroAfiliado) {
+        //const urlApi = `http://localhost:8001/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=2`;
+        const urlApi = `https://srapp.diagnosis.com.ar/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=2`;
+
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: urlApi,
+            headers: { "Content-Type": "application/json" },
+            onload: function(response) {
+                if (response.status === 200) {
+                    try {
+                        const jsonRespuesta = JSON.parse(response.responseText);
+                        if (jsonRespuesta && jsonRespuesta.resultCodigos && jsonRespuesta.resultCodigos.length > 0) {
+                            codigosCargadosGlobal = jsonRespuesta.resultCodigos;
+                            datosMedicosTemporales.codigoDiagnostico = jsonRespuesta.diagnostico;
+                            datosMedicosTemporales.medicoCodigo = jsonRespuesta.medicoCodigo;
+                            datosMedicosTemporales.medicoApellido = jsonRespuesta.medicoApellido;
+                            datosMedicosTemporales.paciente = jsonRespuesta.paciente;
+
+                            dibujarBotonesTandas();
+                        } else {
+                            alert("No se encontraron códigos pendientes para este afiliado.");
+                        }
+                    } catch (e) {
+                        console.error("[Tampermonkey] Error de parseo JSON:", e);
+                    }
+                } else {
+                    try {
+                        const jsonError = JSON.parse(response.responseText);
+                        if (jsonError && jsonError.error) {
+                            alert("Error: " + jsonError.error);
+                        } else {
+                            alert("Verifique que tiene la sesión del DWEB iniciada \nError del servidor: " + response.status);
+                        }
+                    } catch (e) {
+                        alert("Error " + response.status + ": " + response.statusText);
+                    }
+                }
+            },
+            onerror: function() {
+                alert("Error de red. Verificá tu servidor local.");
+            }
+        });
+    }
+
+    function crearBotonEnAlerta(alerta) {
+        if (alerta.dataset.botonAlertaCreado) return;
+
+        const botonAlerta = document.createElement('button');
+        botonAlerta.type = 'button';
+        botonAlerta.innerText = 'Acción Alerta';
+        botonAlerta.style.marginLeft = '15px';
+        botonAlerta.style.cursor = 'pointer';
+
+        botonAlerta.addEventListener('click', () => {
+            console.log("[Tampermonkey] Click en botón de alerta habilitada.");
+        });
+
+        alerta.appendChild(botonAlerta);
+        alerta.dataset.botonAlertaCreado = "true";
+    }
+
+    function limpiarInterfaz() {
+        codigosCargadosGlobal = [];
+        datosMedicosTemporales = { codigoDiagnostico: null, medicoCodigo: null, medicoApellido: null, paciente: null };
+
+        const contenedor = document.getElementById('contenedor-botones-pami');
+        if (contenedor) {
+            const tandasViejas = contenedor.querySelectorAll('.btn-tanda');
+            tandasViejas.forEach(b => b.remove());
+            contenedor.querySelector('.nombre-afiliado')?.remove();
+        }
+    }
+
+    setInterval(() => {
+        const alertas = document.querySelectorAll('app-alert');
+        alertas.forEach(alerta => {
+            if (alerta.textContent && alerta.textContent.includes('HABILITADO')) {
+                crearBotonEnAlerta(alerta);
+            }
+        });
+
+        const inputAfiliado = document.getElementById('Main_NroAfi');
+
+        if (inputAfiliado) {
+            if (inputAfiliado.value.trim() === "") {
+                limpiarInterfaz();
+            }
+
+            if (!inputAfiliado.dataset.botonCreado) {
+                const celdaContenedora = inputAfiliado.closest('td');
+
+                if (celdaContenedora) {
+                    const contenedorBotones = document.createElement('div');
+                    contenedorBotones.id = 'contenedor-botones-pami';
+                    contenedorBotones.style.display = 'block';
+                    contenedorBotones.style.marginTop = '8px';
+
+                    const botonBuscar = document.createElement('button');
+                    botonBuscar.type = 'button';
+                    botonBuscar.innerText = '🔍 Buscar Prácticas';
+                    botonBuscar.style.cursor = 'pointer';
+                    botonBuscar.style.padding = '4px 10px';
+                    botonBuscar.style.fontWeight = 'bold';
+                    botonBuscar.style.backgroundColor = '#007bc4';
+                    botonBuscar.style.color = 'white';
+                    botonBuscar.style.border = 'none';
+                    botonBuscar.style.borderRadius = '3px';
+
+                    botonBuscar.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const numeroAfiliado = inputAfiliado.value.trim();
+
+                        if (numeroAfiliado.length > 0) {
+                            console.log("[Tampermonkey] Buscando prácticas para:", numeroAfiliado);
+                            buscarCodigosAfiliadoDiagnosis(numeroAfiliado);
+                        } else {
+                            alert("Por favor, ingrese un número de afiliado antes de buscar.");
+                            inputAfiliado.focus();
+                        }
+                    });
+
+                    contenedorBotones.appendChild(botonBuscar);
+
+                    celdaContenedora.appendChild(contenedorBotones);
+
+                    inputAfiliado.dataset.botonCreado = "true";
+                }
+            }
+        }
+
+    }, 1000);
+})();
