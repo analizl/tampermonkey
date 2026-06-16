@@ -305,7 +305,7 @@
         mostrarModalErrores(prestacionFallidas);
     }
 
-    function miAccionPersonalizada(numeroAfiliado, apellidoAfiliado) {
+    function queryDiagnosis(numeroAfiliado, apellidoAfiliado) {
         //const urlApi = `http://localhost:8001/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138&apellido=${apellidoAfiliado}`;
         const urlApi = `https://srapp.diagnosis.com.ar/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=138&apellido=${apellidoAfiliado}`;
         GM_xmlhttpRequest({
@@ -326,7 +326,6 @@
                         console.error("[Tampermonkey] Error JSON:", e);
                     }
                 } else {
-                    //alert("Error en la API. Status: " + response.status, response);
                     try {
                         const jsonError = JSON.parse(response.responseText);
 
@@ -347,22 +346,17 @@
     }
 
     function dibujarBotonCarga(nodoReferencia, nroAfiliado) {
-        // Buscamos si ya existe el botón dentro del contenedor o cerca
         const botonExistente = document.querySelector('.mi-boton-alerta-swiss');
 
-        // Si ya existe un botón para este mismo afiliado, no hacemos nada y evitamos el parpadeo
         if (botonExistente) {
             if (botonExistente.getAttribute('data-afiliado') === nroAfiliado) return;
             botonExistente.remove();
         }
 
-        // CÓDIGO NUEVO:
-        // 1. Buscamos todos los spans de la página
         const spans = document.querySelectorAll('span');
-        // 2. Encontramos el que dice exactamente "Nombre y apellido:"
         const etiquetaNombre = Array.from(spans).find(el => el.textContent.trim() === 'Nombre y apellido:');
 
-        let nombreDetectado = ''; // Valor por defecto si falla la búsqueda
+        let nombreDetectado = '';
 
         if (etiquetaNombre) {
             const spanValor = etiquetaNombre.nextElementSibling;
@@ -379,9 +373,8 @@
         btn.className = 'mi-boton-alerta-swiss';
         btn.setAttribute('data-afiliado', nroAfiliado);
 
-        // Estilos del botón (Mantenemos tus estilos que se ven excelentes)
-        btn.style.marginTop = '15px';
-        btn.style.marginBottom = '15px'; // Agregado para que no pegue con lo que sigue abajo
+        btn.style.marginTop = '0px';
+        btn.style.marginBottom = '25px';
         btn.style.padding = '12px 24px';
         btn.style.backgroundColor = '#e4002b';
         btn.style.color = 'white';
@@ -391,7 +384,7 @@
         btn.style.fontWeight = 'bold';
         btn.style.fontSize = '14px';
         btn.style.boxShadow = '0px 4px 6px rgba(0,0,0,0.15)';
-        btn.style.display = 'block'; // 'block' hace que se coloque abajo solo. Si quieres ponerlo al lado de algo específico, se puede cambiar a 'inline-block'
+        btn.style.display = 'block';
         btn.style.transition = 'background-color 0.2s';
 
         btn.addEventListener('mouseenter', () => btn.style.backgroundColor = '#b30021');
@@ -400,10 +393,9 @@
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            miAccionPersonalizada(nroAfiliado, apellidoAfiliado);
+            queryDiagnosis(nroAfiliado, apellidoAfiliado);
         });
 
-        // Coloca el botón inmediatamente ABAJO de todo el recuadro de Prestaciones médicas
         nodoReferencia.after(btn);
     }
 
@@ -429,11 +421,7 @@
                 const h2Prestaciones = Array.from(headers).find(el => el.textContent.trim() === 'Prestaciones médicas');
 
                 if (nroAfiliado && h2Prestaciones) {
-                    const contenedorPrestaciones = h2Prestaciones.closest('.mb-5');
-
-                    if (contenedorPrestaciones) {
-                        dibujarBotonCarga(contenedorPrestaciones, nroAfiliado);
-                    }
+                    dibujarBotonCarga(h2Prestaciones, nroAfiliado);
                 }
             } else {
                 const botonExistente = document.querySelector('.mi-boton-alerta-swiss');
