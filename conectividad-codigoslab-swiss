@@ -4,7 +4,7 @@
 // @version      3.0
 // @description  Carga automática códigos Laboratorio Swiss Medical desde Diagnosis
 // @author       Diagnosis
-// @match        https://www.swissmedical.com.ar/prestadores/*
+// @match        https://swissmedical.com.ar/prestadores/*
 // @grant        GM_xmlhttpRequest
 // @connect      srapp.diagnosis.com.ar
 // @connect      localhost
@@ -317,7 +317,6 @@
                     try {
                         const jsonRespuesta = JSON.parse(response.responseText);
                         if (jsonRespuesta && jsonRespuesta.resultCodigos && jsonRespuesta.resultCodigos.length > 0) {
-                            console.log("hola", jsonRespuesta)
                             cargarCodigosEnFormulario(jsonRespuesta.resultCodigos);
                         } else {
                             alert("No se encontraron códigos pendientes para este afiliado.");
