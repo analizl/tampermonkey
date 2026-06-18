@@ -4,7 +4,7 @@
 // @version      3.0
 // @description  Carga automática códigos Laboratorio Swiss Medical desde Diagnosis
 // @author       Diagnosis
-// @match        https://swissmedical.com.ar/prestadores/*
+// @match        https://www.swissmedical.com.ar/*
 // @grant        GM_xmlhttpRequest
 // @connect      srapp.diagnosis.com.ar
 // @connect      localhost
@@ -414,9 +414,16 @@
         const paso3 = Array.from(pasos).find(el => el.textContent.trim() === 'Paso 3');
         if (paso3) {
             if (paso3.classList.contains('Multistep_active__966uQ')) {
+                if (!window.location.href.includes('/prestadores/')) {
+                // Si el usuario se fue a otra sección del sitio, limpiamos el botón si existía y frenamos
+                const botonExistente = document.querySelector('.mi-boton-alerta-swiss');
+                if (botonExistente) botonExistente.remove();
+                    return;
+                }
                 const nroAfiliado = obtenerNumeroAfiliado();
 
                 const headers = document.querySelectorAll('h2');
+
                 const h2Prestaciones = Array.from(headers).find(el => el.textContent.trim() === 'Prestaciones médicas');
 
                 if (nroAfiliado && h2Prestaciones) {
