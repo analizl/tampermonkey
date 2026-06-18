@@ -105,7 +105,17 @@
                     try {
                         const jsonRespuesta = JSON.parse(response.responseText);
                         if (jsonRespuesta && jsonRespuesta.resultCodigos && jsonRespuesta.resultCodigos.length > 0) {
-                            codigosCargadosGlobal = jsonRespuesta.resultCodigos;
+
+                            let conCodigosRepetidos = [];
+                            jsonRespuesta.resultCodigos.forEach(item => {
+                                const veces = item.repeticiones && item.repeticiones > 0 ? item.repeticiones : 1;
+                                for (let r = 0; r < veces; r++) {
+                                    conCodigosRepetidos.push(item);
+                                }
+                            });
+
+                            codigosCargadosGlobal = conCodigosRepetidos;
+
                             datosMedicosTemporales.codigoDiagnostico = jsonRespuesta.diagnostico;
                             datosMedicosTemporales.medicoCodigo = jsonRespuesta.medicoCodigo;
                             datosMedicosTemporales.medicoApellido = jsonRespuesta.medicoApellido;
