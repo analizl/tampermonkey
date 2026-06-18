@@ -4,7 +4,7 @@
 // @version      3.0
 // @description  Carga automática códigos Laboratorio Swiss Medical desde Diagnosis
 // @author       Diagnosis
-// @match        https://www.swissmedical.com.ar/*
+// @match        https://*.swissmedical.com.ar/*
 // @grant        GM_xmlhttpRequest
 // @connect      srapp.diagnosis.com.ar
 // @connect      localhost
