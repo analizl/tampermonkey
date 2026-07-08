@@ -99,9 +99,32 @@
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Enter') {
                 const ordenActiva = GM_getValue('pami_orden_en_modal', null);
+                const inputFile = document.querySelector("input#m_doc");
 
-                if (ordenActiva) {
-                    procesarSubidaArchivo(ordenActiva)
+                // busca si el modal esta abierto, sino ignora el Enter
+                const titulos = document.querySelectorAll("h4.modal-title");
+                let modalCargarDocumentacionVisible = false;
+
+
+                titulos.forEach(titulo => {
+                    if (titulo.innerText.trim() === "Cargar documentación" && titulo.offsetParent !== null) {
+                        modalCargarDocumentacionVisible = true;
+                    }
+                });
+
+
+                if (!modalCargarDocumentacionVisible) {
+                    if (ordenActiva) {
+                        GM_setValue('pami_orden_en_modal', null);
+                    }
+                    return;
+                }
+
+                if (ordenActiva && inputFile) {
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    procesarSubidaArchivo(ordenActiva);
                 }
             }
         }, { capture: true });
@@ -316,9 +339,9 @@
 
             const textoPagina = document.body.innerText;
             if (
-                textoPagina.includes("No se ha encontrado al paciente") || 
-                textoPagina.includes("No se han encontrado estudios") || 
-                textoPagina.includes("último mes") || 
+                textoPagina.includes("No se ha encontrado al paciente") ||
+                textoPagina.includes("No se han encontrado estudios") ||
+                textoPagina.includes("último mes") ||
                 textoPagina.includes("not found")
             ) {
                 clearInterval(buscarTablaResultados);
