@@ -92,6 +92,77 @@
         console.log(`[Tampermonkey] Se inyectaron ${listaCodigos.length} códigos en el formulario.`);
     }
 
+    function mostrarErrorCodigoFaltante() {
+        const modalViejo = document.getElementById('tm-modal-error-container');
+        if (modalViejo) modalViejo.remove();
+
+        const contenedor = document.createElement('div');
+        contenedor.id = 'tm-modal-error-container';
+        contenedor.style.position = 'fixed';
+        contenedor.style.top = '0';
+        contenedor.style.left = '0';
+        contenedor.style.width = '100vw';
+        contenedor.style.height = '100vh';
+        contenedor.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        contenedor.style.display = 'flex';
+        contenedor.style.justifyContent = 'center';
+        contenedor.style.alignItems = 'center';
+        contenedor.style.zIndex = '99999';
+        contenedor.style.fontFamily = 'Roboto, "Helvetica Neue", sans-serif';
+
+        const modal = document.createElement('div');
+        modal.style.backgroundColor = '#ffffff';
+        modal.style.width = '450px';
+        modal.style.maxWidth = '90%';
+        modal.style.borderRadius = '12px';
+        modal.style.boxShadow = '0px 8px 24px rgba(0,0,0,0.3)';
+        modal.style.overflow = 'hidden';
+
+        const header = document.createElement('div');
+        header.style.backgroundColor = '#dc3545';
+        header.style.color = 'white';
+        header.style.padding = '16px 20px';
+        header.style.fontWeight = 'bold';
+        header.style.fontSize = '18px';
+        header.innerText = '⚠️ Código Requerido Faltante';
+
+        const body = document.createElement('div');
+        body.style.padding = '20px';
+        body.style.color = '#333333';
+        body.style.fontSize = '14px';
+        body.style.lineHeight = '1.6';
+
+        const mensaje = document.createElement('p');
+        mensaje.style.margin = '0 0 20px 0';
+        mensaje.style.fontSize = '15px';
+        mensaje.innerHTML = 'El código <strong>1 - Acto Bioquímico</strong> no se encuentra en la ficha de este afiliado.<br><br>Por favor, guardalo primero en el <strong>SIP</strong> y luego vuelva para realizar la carga automática de códigos.';
+        body.appendChild(mensaje);
+
+        const btnCerrar = document.createElement('button');
+        btnCerrar.type = 'button';
+        btnCerrar.innerText = 'Entendido';
+        btnCerrar.style.width = '100%';
+        btnCerrar.style.padding = '12px';
+        btnCerrar.style.backgroundColor = '#dc3545';
+        btnCerrar.style.color = 'white';
+        btnCerrar.style.border = 'none';
+        btnCerrar.style.borderRadius = '6px';
+        btnCerrar.style.cursor = 'pointer';
+        btnCerrar.style.fontWeight = 'bold';
+        btnCerrar.style.fontSize = '14px';
+
+        btnCerrar.addEventListener('click', () => {
+            document.body.removeChild(contenedor);
+            datosMedicosTemporales = { codigoDiagnostico: null, medicoCodigo: null, medicoApellido: null };
+        });
+
+        body.appendChild(btnCerrar);
+        modal.appendChild(header);
+        modal.appendChild(body);
+        contenedor.appendChild(modal);
+        document.body.appendChild(contenedor);
+    }
+
     function buscarCodigosAfiliadoDiagnosis(numeroAfiliado) {
         //const urlApi = `http://localhost:8001/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=2`;
         const urlApi = `https://srapp.diagnosis.com.ar/api/v2/laboratorio/paciente/${numeroAfiliado}/codigos?obra=2`;
@@ -121,7 +192,21 @@
                             datosMedicosTemporales.medicoApellido = jsonRespuesta.medicoApellido;
                             datosMedicosTemporales.paciente = jsonRespuesta.paciente;
 
-                            dibujarBotonesTandas();
+                            // chequear si está el código 1 Acto Bioquímico, si no mostrar cartel de error
+                            const listaCodigos = jsonRespuesta.resultCodigos;
+                            let codigoPresente = false
+                            for (let i = 0; i < listaCodigos.length; i++) {
+                                const item = listaCodigos[i];
+                                if(String(item.codigo) === "1"){
+                                    codigoPresente = true
+                                    break;
+                                }
+                            }
+                            if(codigoPresente){
+                                dibujarBotonesTandas();
+                            } else {
+                                mostrarErrorCodigoFaltante()
+                            }
                         } else {
                             alert("No se encontraron códigos pendientes para este afiliado.");
                         }
