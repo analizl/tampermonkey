@@ -373,18 +373,15 @@
         // Cuantas opciones hay
         const opcionesEfector = panelEfector.querySelectorAll('mat-option');
         console.log(`[Tampermonkey] Opciones encontradas en Efector: ${opcionesEfector.length}`);
+        const efectorArnaudoGisel = [...opcionesEfector].find(opcion => opcion.textContent.trim().includes("MEDINA ARNAUDO GISEL IVANA"));
 
-        // Si hay EXACTAMENTE una sola opción, la elegimos automáticamente
-        if (opcionesEfector.length === 1) {
-            const unicaOpcion = opcionesEfector[0];
-            console.log(`[Tampermonkey] Una sola opción detectada (${unicaOpcion.textContent.trim()}). Seleccionando...`);
-
-            unicaOpcion.click();
+        if(efectorArnaudoGisel){
+            efectorArnaudoGisel.click();
             inputEfector.blur();
 
             await sleep(800);
+            await automatizarEspecialidadFila();
 
-            //await automatizarEspecialidadFila();
         } else {
             console.log("[Tampermonkey] Existen múltiples opciones o ninguna. Se deja el campo vacío.");
             inputEfector.blur();
