@@ -380,7 +380,7 @@
             inputEfector.blur();
 
             await sleep(800);
-            await automatizarEspecialidadFila();
+            //await automatizarEspecialidadFila();
 
         } else {
             console.log("[Tampermonkey] Existen múltiples opciones o ninguna. Se deja el campo vacío.");
