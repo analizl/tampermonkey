@@ -204,104 +204,93 @@
             const cantidadFinal = item.repeticiones || 1;
 
             try {
-                const inputCodigo = document.querySelector('input[name="prestacionCodigo"]');
-                const inputCantidad = document.querySelector('input[name="prestacionCantidad"]');
+                // Buscamos los inputs por id directo o name
+                const inputCodigo = document.getElementById('prestacionCodigoConectividad') || document.querySelector('input[name="prestacionCodigo"]');
+                const inputCantidad = document.getElementById('prestacionCantidad') || document.querySelector('input[name="prestacionCantidad"]');
 
                 if (!inputCodigo || !inputCantidad) {
                     throw new Error("No se localizaron los inputs de prestación en el DOM.");
                 }
 
-                // limpieza del input
+                // 1. Limpieza y foco inicial
                 inputCodigo.focus();
-                const setterCodigo = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                setterCodigo.call(inputCodigo, '');
-                inputCodigo.dispatchEvent(new Event('input', { bubbles: true }));
-                await sleep(200);
+                await escribirEnInputReact(inputCodigo, '');
+                await sleep(150);
 
-                // se escribe el codigo nuevo
+                // 2. Escribir el código en el input
                 await escribirEnInputReact(inputCodigo, codigoFinal);
-                await sleep(200);
-
-                // blur
-                inputCodigo.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
-                inputCodigo.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-                document.body.click();
-                await sleep(500);
-
-                // se vuelve al input para que aparezcan las opciones
-                inputCodigo.focus();
-                inputCodigo.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
-                inputCodigo.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
                 await sleep(300);
 
+                // 3. Forzar apertura del menú desplegable ARIA / Autocomplete
+                inputCodigo.dispatchEvent(new Event('focus', { bubbles: true }));
+                inputCodigo.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowDown', keyCode: 40 }));
+                await sleep(300);
+
+                // 4. Búsqueda de la opción flotante (soporta role="option", li, o divs flotantes)
                 let opcionDesplegable = null;
-                for (let intento = 0; intento < 20; intento++) {
-                    const divsConCursor = Array.from(document.querySelectorAll('div'))
-                        .filter(div => div.style.cursor === 'pointer' || div.getAttribute('style')?.includes('cursor: pointer'));
+                for (let intento = 0; intento < 25; intento++) {
+                    const opcionesAria = Array.from(document.querySelectorAll('[role="option"], [role="listbox"] *, #prestacionCodigo-listbox *'));
 
-                    opcionDesplegable = divsConCursor.find(div => div.textContent.includes(codigoFinal));
+                    opcionDesplegable = opcionesAria.find(el => el.textContent.trim().includes(codigoFinal));
 
-                    if (opcionDesplegable) {
-                        break;
+                    // Respaldo: búsqueda general en elementos flotantes visibles
+                    if (!opcionDesplegable) {
+                        const divsVisibles = Array.from(document.querySelectorAll('li, div'))
+                            .filter(el => el.offsetParent !== null); // Solo visibles en pantalla
+                        opcionDesplegable = divsVisibles.find(el => el.textContent.trim().startsWith(codigoFinal));
                     }
+
+                    if (opcionDesplegable) break;
                     await sleep(150);
                 }
 
                 if (opcionDesplegable) {
-                    console.log(`[Tampermonkey] Seleccionando opción flotante para: ${codigoFinal}`);
-                    opcionDesplegable.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                    console.log(`[Tampermonkey] Seleccionando opción para: ${codigoFinal}`);
+                    opcionDesplegable.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
                     opcionDesplegable.click();
-                    opcionDesplegable.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                    opcionDesplegable.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
                     await sleep(400);
                 } else {
-                    throw new Error("El menú de opciones de Swiss Medical no apareció a tiempo para este código.");
+                    throw new Error("El menú desplegable de Swiss Medical no apareció a tiempo.");
                 }
 
-                if (inputCodigo.value === "" || !inputCodigo.value) {
-                     throw new Error("El código no quedó seleccionado en el input.");
-                }
-                const inputDesc = document.querySelector('input[name="prestacionDescripcion"]') || document.querySelector('input[name*="Descripcion"]');
+                // 5. Validar si la descripción se completó automáticamente
+                const inputDesc = document.getElementById('prestacionDescripcion') || document.querySelector('input[name="prestacionDescripcion"]');
                 if (inputDesc && (!inputDesc.value || inputDesc.value.trim() === "")) {
                      throw new Error("Código inexistente (Descripción vacía).");
                 }
 
-                const tipoOriginalCantidad = inputCantidad.type;
-                inputCantidad.type = 'text';
-                await sleep(50);
-
+                // 6. Cargar la Cantidad de forma nativa en React
                 inputCantidad.focus();
-                const setterCantidad = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                setterCantidad.call(inputCantidad, String(cantidadFinal));
-                inputCantidad.dispatchEvent(new Event('input', { bubbles: true }));
-                inputCantidad.dispatchEvent(new Event('change', { bubbles: true }));
+                await escribirEnInputReact(inputCantidad, String(cantidadFinal));
+                await sleep(300);
 
-                inputCantidad.type = tipoOriginalCantidad;
-                await sleep(400);
-
-                const botonAgregar = Array.from(document.querySelectorAll('button'))
-                                          .find(btn => btn.textContent.trim() === '+');
+                // 7. Click en el botón de agregar '+'
+                const botonAgregar = document.querySelector('button[aria-label="Agregar prestación"]') ||
+                                     Array.from(document.querySelectorAll('button')).find(btn => btn.textContent.trim() === '+');
 
                 if (botonAgregar) {
                     botonAgregar.click();
-                    await sleep(1500);
+                    await sleep(1200);
                 } else {
-                    throw new Error("No se encontró el botón '+' para añadir a la grilla.");
+                    throw new Error("No se encontró el botón '+' para añadir a la lista.");
                 }
 
             } catch (error) {
                 console.error(`[Tampermonkey] ❌ Error con código ${codigoFinal}:`, error.message);
                 prestacionFallidas.push(`${codigoFinal} (${item.nombre || 'Sin nombre'} - ${error.message})`);
 
+                // Intentar limpiar el input en caso de fallo para la siguiente iteración
                 try {
-                    const inputCodigo = document.querySelector('input[name="prestacionCodigo"]');
-                    if(inputCodigo) {
-                        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(inputCodigo, '');
-                        inputCodigo.dispatchEvent(new Event('input', { bubbles: true }));
+                    const inputCodigo = document.getElementById('prestacionCodigoConectividad') || document.querySelector('input[name="prestacionCodigo"]');
+                    if (inputCodigo) {
+                        await escribirEnInputReact(inputCodigo, '');
                     }
                 } catch(e){}
-                await sleep(800);
+                await sleep(500);
             }
         }
+
         mostrarModalErrores(prestacionFallidas);
     }
 
@@ -317,6 +306,7 @@
                     try {
                         const jsonRespuesta = JSON.parse(response.responseText);
                         if (jsonRespuesta && jsonRespuesta.resultCodigos && jsonRespuesta.resultCodigos.length > 0) {
+                            console.log("respuesta", jsonRespuesta.resultCodigos)
                             cargarCodigosEnFormulario(jsonRespuesta.resultCodigos);
                         } else {
                             alert("No se encontraron códigos pendientes para este afiliado.");
@@ -399,40 +389,58 @@
     }
 
     function obtenerNumeroAfiliado() {
-        const prefijoElement = document.querySelector('.validateMember_validateMember__inputContainer__e8yxc span.text-muted');
-        const inputAfiliado = document.querySelector('input[data-test-id="validate-member-input"]');
+        const inputContrato = document.querySelector('input[aria-label="Contrato"]');
+        const inputIntegrante = document.querySelector('input[aria-label="Integrante"]');
+        const inputValidador = document.querySelector('input[aria-label="Validador"]');
 
-        if (inputAfiliado && inputAfiliado.value) {
-            const prefijo = prefijoElement ? prefijoElement.textContent.trim() : "";
-            return `${(prefijo + inputAfiliado.value).replace(/\s+/g, '')}`;
+        if (inputContrato && inputContrato.value) {
+            const contenedorPadre = inputContrato.closest('div.inline-flex');
+            const prefijoElement = contenedorPadre ? contenedorPadre.querySelector('strong') : null;
+            const prefijo = prefijoElement ? prefijoElement.textContent.trim() : "800006";
+
+            const contrato = inputContrato.value.trim();
+            const integrante = inputIntegrante ? inputIntegrante.value.trim() : "";
+            const validador = inputValidador ? inputValidador.value.trim() : "";
+
+            return `${prefijo}${contrato}${integrante}${validador}`.replace(/\s+/g, '');
         }
+
+        const inputLegacy = document.querySelector('input[data-test-id="validate-member-input"]');
+        if (inputLegacy && inputLegacy.value) {
+            return inputLegacy.value.replace(/\s+/g, '');
+        }
+
         return null;
     }
 
     setInterval(() => {
-        const pasos = document.querySelectorAll('.Multistep_pasos__pK2mS div');
-        const paso3 = Array.from(pasos).find(el => el.textContent.trim() === 'Paso 3');
-        if (paso3) {
-            if (paso3.classList.contains('Multistep_active__966uQ')) {
-                if (!window.location.href.includes('/prestadores/')) {
-                    const botonExistente = document.querySelector('.mi-boton-alerta-swiss');
-                    if (botonExistente) botonExistente.remove();
-                    return;
-                }
-                const nroAfiliado = obtenerNumeroAfiliado();
+        const divs = document.querySelectorAll('div');
+        const paso3Activo = Array.from(divs).find(el => {
+            const texto = el.textContent.trim().toLowerCase();
+            const esPaso3 = texto === 'paso 3';
 
-                const headers = document.querySelectorAll('h2');
+            const tieneClaseActiva = el.classList.contains('bg-legacy-danger') ||
+                                     el.className.includes('bg-legacy-danger');
 
-                const h2Prestaciones = Array.from(headers).find(el => el.textContent.trim() === 'Prestaciones médicas');
+            return esPaso3 && tieneClaseActiva;
+        });
 
-                if (nroAfiliado && h2Prestaciones) {
-                    dibujarBotonCarga(h2Prestaciones, nroAfiliado);
-                }
-            } else {
-                const botonExistente = document.querySelector('.mi-boton-alerta-swiss');
-                if (botonExistente) botonExistente.remove();
-            }
+        if (!paso3Activo) {
+            const botonExistente = document.querySelector('.mi-boton-alerta-swiss');
+            if (botonExistente) botonExistente.remove();
+            return;
+        }
+
+        const nroAfiliado = obtenerNumeroAfiliado();
+
+        const headers = document.querySelectorAll('h1, h2, h3, h4, strong, div');
+        const h2Prestaciones = Array.from(headers).find(el => {
+            const txt = el.textContent.trim().toLowerCase();
+            return txt === 'prestaciones médicas' || txt === 'prestaciones';
+        });
+
+        if (nroAfiliado && h2Prestaciones) {
+            dibujarBotonCarga(h2Prestaciones, nroAfiliado);
         }
     }, 1000);
-
 })();
