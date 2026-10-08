@@ -306,7 +306,6 @@
                     try {
                         const jsonRespuesta = JSON.parse(response.responseText);
                         if (jsonRespuesta && jsonRespuesta.resultCodigos && jsonRespuesta.resultCodigos.length > 0) {
-                            console.log("respuesta", jsonRespuesta.resultCodigos)
                             cargarCodigosEnFormulario(jsonRespuesta.resultCodigos);
                         } else {
                             alert("No se encontraron códigos pendientes para este afiliado.");
